@@ -1,0 +1,17 @@
+{
+  "name": "campus-planner-implementation",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -c cyan,green \"npm run dev -w @campus/api\" \"npm run start -w @campus/web\"",
+    "build": "npm run build -w @campus/contracts && npm run build -w @campus/api && npm run build -w @campus/web",
+    "test": "npm run test -w @campus/contracts && npm run test -w @campus/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
+
