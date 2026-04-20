@@ -168,14 +168,25 @@ interface InteractionState {
         </article>
 
         <article class="card panel">
-          <h2>Room GeoJSON preview</h2>
-          @if (selectedRoom()) {
-            <pre class="json-preview">{{ selectedRoomPolygonPreview() }}</pre>
+          <div class="section-header">
+            <div>
+              <h2>Rooms GeoJSON preview</h2>
+              <p class="muted">This matches the rooms array sent to the API when you save.</p>
+            </div>
+            <span class="chip">{{ rooms().length }} room payloads</span>
+          </div>
+          @if (rooms().length > 0) {
+            <pre class="json-preview">{{ roomsPayloadPreview() }}</pre>
           } @else {
-            <p class="muted">Select a room to inspect the polygon that will be sent to the API.</p>
+            <p class="muted">Add at least one room to build the room payload.</p>
+          }
+          @if (invalidRoomNames().length > 0) {
+            <p class="message error">
+              These rooms are outside the footprint polygon: {{ invalidRoomNames().join(', ') }}
+            </p>
           }
           <div class="actions top-gap">
-            <button type="button" (click)="saveRooms()" [disabled]="!mapId() || !allRoomsValid()">Save rooms</button>
+            <button type="button" (click)="saveRooms()" [disabled]="!mapId()">Save rooms</button>
             @if (mapId()) {
               <a class="button ghost" [routerLink]="['/maps', mapId(), 'book']">Open booking view</a>
             }
@@ -393,21 +404,37 @@ export class MapEditorPageComponent {
     return this.rooms().find((room) => room.id === this.selectedRoomId()) ?? null;
   }
 
-  protected selectedRoomPolygonPreview(): string {
-    const room = this.selectedRoom();
-    return room ? JSON.stringify(roomModelToPolygon(room), null, 2) : '';
+  protected roomsPayloadPreview(): string {
+    return JSON.stringify(
+      this.rooms().map((room, index) => ({
+        id: room.id,
+        name: room.name,
+        color: room.color,
+        sortOrder: index,
+        geometryGeoJson: roomModelToPolygon(room),
+      })),
+      null,
+      2,
+    );
   }
 
   protected addRoom(): void {
     const box = this.bounds();
+    const index = this.rooms().length;
+    const stepX = Math.max(box.width * 0.06, 28);
+    const stepY = Math.max(box.height * 0.05, 24);
+    const width = Math.max(box.width * 0.18, 48);
+    const height = Math.max(box.height * 0.14, 48);
+    const maxX = Math.max(box.minX + 12, box.maxX - width - 12);
+    const maxY = Math.max(box.minY + 12, box.maxY - height - 12);
     const room: EditorRoomModel = {
       id: crypto.randomUUID(),
       name: `Room ${this.rooms().length + 1}`,
       color: '#38bdf8',
-      x: box.minX + box.width * 0.1,
-      y: box.minY + box.height * 0.1,
-      width: Math.max(box.width * 0.18, 48),
-      height: Math.max(box.height * 0.14, 48),
+      x: Math.min(box.minX + box.width * 0.1 + stepX * index, maxX),
+      y: Math.min(box.minY + box.height * 0.1 + stepY * index, maxY),
+      width,
+      height,
       sortOrder: this.rooms().length,
     };
 
@@ -432,6 +459,12 @@ export class MapEditorPageComponent {
 
   protected allRoomsValid(): boolean {
     return this.rooms().every((room) => this.isRoomValid(room));
+  }
+
+  protected invalidRoomNames(): string[] {
+    return this.rooms()
+      .filter((room) => !this.isRoomValid(room))
+      .map((room) => room.name);
   }
 
   protected startInteraction(event: PointerEvent, room: EditorRoomModel, mode: InteractionMode): void {
@@ -617,4 +650,3 @@ export class MapEditorPageComponent {
     return 'Request failed.';
   }
 }
-
