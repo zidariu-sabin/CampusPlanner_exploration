@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 
 import { AuthService } from '../core/auth.service';
 
@@ -147,6 +147,7 @@ import { AuthService } from '../core/auth.service';
 export class AuthPageComponent {
   private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   protected readonly mode = signal<'login' | 'register'>('login');
@@ -164,6 +165,12 @@ export class AuthPageComponent {
     password: ['', [Validators.required, Validators.minLength(8)]],
   });
 
+  constructor() {
+    if (this.auth.isLoggedIn()) {
+      void this.router.navigateByUrl(this.redirectTarget());
+    }
+  }
+
   protected async submitLogin(): Promise<void> {
     if (this.loginForm.invalid) {
       this.loginForm.markAllAsTouched();
@@ -175,7 +182,7 @@ export class AuthPageComponent {
     this.error.set('');
     try {
       await this.auth.login(this.loginForm.getRawValue());
-      await this.router.navigate(['/']);
+      await this.router.navigateByUrl(this.redirectTarget());
     } catch (error) {
       this.error.set(this.extractMessage(error));
     } finally {
@@ -194,7 +201,7 @@ export class AuthPageComponent {
     this.error.set('');
     try {
       await this.auth.register(this.registerForm.getRawValue());
-      await this.router.navigate(['/']);
+      await this.router.navigateByUrl(this.redirectTarget());
     } catch (error) {
       this.error.set(this.extractMessage(error));
     } finally {
@@ -221,5 +228,9 @@ export class AuthPageComponent {
   protected showRegisterError(controlName: 'displayName' | 'email' | 'password'): boolean {
     const control = this.registerForm.controls[controlName];
     return !!control && control.invalid && (control.touched || control.dirty);
+  }
+
+  private redirectTarget(): string {
+    return this.route.snapshot.queryParamMap.get('redirectTo') || '/';
   }
 }

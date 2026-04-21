@@ -3,18 +3,20 @@ import { CanActivateFn, Router } from '@angular/router';
 
 import { AuthService } from './auth.service';
 
-export const authGuard: CanActivateFn = async () => {
+export const authGuard: CanActivateFn = async (_route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);
+  const loginUrl = router.createUrlTree(['/login'], {
+    queryParams: { redirectTo: state.url },
+  });
 
   if (!authService.isLoggedIn()) {
-    return router.createUrlTree(['/login']);
+    return loginUrl;
   }
 
   if (!authService.user()) {
     await authService.refreshMe();
   }
 
-  return authService.isLoggedIn() ? true : router.createUrlTree(['/login']);
+  return authService.isLoggedIn() ? true : loginUrl;
 };
-
