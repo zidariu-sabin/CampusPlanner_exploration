@@ -9,7 +9,7 @@ import { AppDataSource } from '../data-source.js';
 import { config } from '../config.js';
 import { FloorMapEntity } from '../entities/floor-map.entity.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { getMapOrFail, replaceRooms } from '../services/map.service.js';
+import { getMapOrFail, replaceRooms, resolveParentMapIdOrFail } from '../services/map.service.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { toMapDto, toMapSummaryDto } from '../utils/serializers.js';
@@ -27,6 +27,7 @@ const mapSchema = z.object({
   name: z.string().trim().min(2).max(120),
   floorLabel: z.string().trim().min(1).max(50),
   timezone: z.string().trim().min(1).default('Europe/Bucharest'),
+  parentMapId: z.string().uuid().nullable().optional().default(null),
   footprintGeoJson: z.any(),
 });
 
@@ -62,6 +63,8 @@ mapsRouter.get(
   asyncHandler(async (_request, response) => {
     const maps = await AppDataSource.getRepository(FloorMapEntity).find({
       relations: {
+        parentMap: true,
+        childMaps: true,
         rooms: true,
       },
       order: {
@@ -91,6 +94,7 @@ mapsRouter.post(
       name: body.name,
       floorLabel: body.floorLabel,
       timezone: body.timezone,
+      parentMapId: await resolveParentMapIdOrFail(null, body.parentMapId),
       footprintGeoJson: ensurePolygon(body.footprintGeoJson),
       backgroundFitMode: 'contain',
     });
@@ -110,6 +114,7 @@ mapsRouter.patch(
     map.name = body.name;
     map.floorLabel = body.floorLabel;
     map.timezone = body.timezone;
+    map.parentMapId = await resolveParentMapIdOrFail(map.id, body.parentMapId);
     map.footprintGeoJson = ensurePolygon(body.footprintGeoJson);
 
     await AppDataSource.getRepository(FloorMapEntity).save(map);

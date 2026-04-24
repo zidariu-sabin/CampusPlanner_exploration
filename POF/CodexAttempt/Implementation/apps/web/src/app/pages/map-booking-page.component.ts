@@ -7,6 +7,7 @@ import { GeoJsonPolygon, MapDto, MeetingDto, UserSummaryDto, getBoundingBox, pol
 
 import { assetUrl } from '../core/api';
 import { AuthService } from '../core/auth.service';
+import { downloadMapSvg } from '../core/map-svg-export';
 import { MapsService } from '../core/maps.service';
 import { MeetingsService } from '../core/meetings.service';
 import { UsersService } from '../core/users.service';
@@ -45,7 +46,10 @@ import { UsersService } from '../core/users.service';
               <h2>Map view</h2>
               <p class="muted">Rooms remain tied to the saved GeoJSON geometry.</p>
             </div>
-            <span class="chip">{{ meetings().length }} meetings on {{ selectedDate }}</span>
+            <div class="actions">
+              <span class="chip">{{ meetings().length }} meetings on {{ selectedDate }}</span>
+              <button type="button" class="ghost" (click)="exportSvg()" [disabled]="!map()">Export SVG</button>
+            </div>
           </div>
 
           @if (map()) {
@@ -342,6 +346,23 @@ export class MapBookingPageComponent {
     }
   }
 
+  protected async exportSvg(): Promise<void> {
+    const map = this.map();
+    if (!map) {
+      return;
+    }
+
+    this.error.set('');
+    this.message.set('');
+
+    try {
+      await downloadMapSvg(map);
+      this.message.set(`Downloaded ${map.name} as SVG.`);
+    } catch (error) {
+      this.error.set(this.extractMessage(error));
+    }
+  }
+
   protected async deleteMeeting(meetingId: string): Promise<void> {
     try {
       await this.meetingsService.delete(meetingId);
@@ -378,6 +399,10 @@ export class MapBookingPageComponent {
   }
 
   private extractMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+
     if (typeof error === 'object' && error && 'error' in error) {
       return ((error as { error?: { message?: string } }).error?.message) ?? 'Request failed.';
     }

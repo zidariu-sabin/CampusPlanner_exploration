@@ -15,6 +15,8 @@ export async function getMapOrFail(mapId: string): Promise<FloorMapEntity> {
   const map = await mapRepository().findOne({
     where: { id: mapId },
     relations: {
+      parentMap: true,
+      childMaps: true,
       rooms: true,
     },
   });
@@ -24,6 +26,46 @@ export async function getMapOrFail(mapId: string): Promise<FloorMapEntity> {
   }
 
   return map;
+}
+
+export async function resolveParentMapIdOrFail(mapId: string | null, parentMapId: string | null): Promise<string | null> {
+  if (!parentMapId) {
+    return null;
+  }
+
+  if (mapId && parentMapId === mapId) {
+    throw new HttpError(400, 'A map cannot be its own parent.');
+  }
+
+  let currentParentId: string | null = parentMapId;
+  const visited = new Set<string>();
+
+  while (currentParentId) {
+    if (visited.has(currentParentId)) {
+      throw new HttpError(400, 'Map hierarchy contains a cycle.');
+    }
+    visited.add(currentParentId);
+
+    const currentParent = await mapRepository().findOne({
+      where: { id: currentParentId },
+      select: {
+        id: true,
+        parentMapId: true,
+      },
+    });
+
+    if (!currentParent) {
+      throw new HttpError(400, 'Parent map not found.');
+    }
+
+    if (mapId && currentParent.id === mapId) {
+      throw new HttpError(400, 'A map cannot be assigned to one of its descendants.');
+    }
+
+    currentParentId = currentParent.parentMapId;
+  }
+
+  return parentMapId;
 }
 
 export async function replaceRooms(
@@ -73,4 +115,3 @@ export async function replaceRooms(
 
   return getMapOrFail(mapId);
 }
-

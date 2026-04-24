@@ -3,6 +3,8 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -24,6 +26,9 @@ export class FloorMapEntity {
   @Column({ type: 'varchar', default: 'Europe/Bucharest' })
   timezone = 'Europe/Bucharest';
 
+  @Column({ type: 'uuid', name: 'parent_map_id', nullable: true })
+  parentMapId: string | null = null;
+
   @Column({ type: 'jsonb', name: 'footprint_geojson' })
   footprintGeoJson!: GeoJsonPolygon;
 
@@ -38,6 +43,13 @@ export class FloorMapEntity {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
+
+  @ManyToOne(() => FloorMapEntity, (map) => map.childMaps, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'parent_map_id' })
+  parentMap: FloorMapEntity | null = null;
+
+  @OneToMany(() => FloorMapEntity, (map) => map.parentMap)
+  childMaps!: FloorMapEntity[];
 
   @OneToMany(() => RoomEntity, (room) => room.map)
   rooms!: RoomEntity[];

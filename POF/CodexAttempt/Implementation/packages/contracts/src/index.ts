@@ -35,8 +35,11 @@ export interface MapSummaryDto {
   name: string;
   floorLabel: string;
   timezone: string;
+  parentMapId: string | null;
+  parentMapName: string | null;
   backgroundImageUrl: string | null;
   backgroundFitMode: BackgroundFitMode;
+  childMapCount: number;
   roomCount: number;
 }
 
@@ -63,6 +66,7 @@ export interface CreateMapRequest {
   name: string;
   floorLabel: string;
   timezone?: string;
+  parentMapId?: string | null;
   footprintGeoJson: GeoJsonPolygon;
 }
 
@@ -295,4 +299,3 @@ export function polygonToRoomModel(
     height: box.height,
   };
 }
-

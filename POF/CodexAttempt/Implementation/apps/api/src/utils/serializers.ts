@@ -32,8 +32,11 @@ export function toMapSummaryDto(map: FloorMapEntity): MapSummaryDto {
     name: map.name,
     floorLabel: map.floorLabel,
     timezone: map.timezone,
+    parentMapId: map.parentMapId,
+    parentMapName: map.parentMap?.name ?? null,
     backgroundImageUrl: map.backgroundImageUrl,
     backgroundFitMode: map.backgroundFitMode,
+    childMapCount: map.childMaps?.length ?? 0,
     roomCount: map.rooms?.length ?? 0,
   };
 }
@@ -64,4 +67,3 @@ export function toMeetingDto(meeting: MeetingEntity): MeetingDto {
     participants: (meeting.participants ?? []).map(toUserSummary),
   };
 }
-

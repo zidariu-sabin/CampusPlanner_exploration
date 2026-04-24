@@ -7,6 +7,7 @@ import {
   EditorRoomModel,
   GeoJsonPolygon,
   MapDto,
+  MapSummaryDto,
   createPolygon,
   createRectanglePolygon,
   getBoundingBox,
@@ -17,6 +18,7 @@ import {
 } from '@campus/contracts';
 
 import { assetUrl } from '../core/api';
+import { downloadMapSvg, readBlobAsDataUrl, type ExportableMap } from '../core/map-svg-export';
 import { MapsService } from '../core/maps.service';
 
 type InteractionMode = 'drag' | 'resize';
@@ -62,6 +64,15 @@ interface InteractionState {
           <label>Floor label <input [(ngModel)]="floorLabel" /></label>
           <label>Timezone <input [(ngModel)]="timezone" /></label>
           <label>
+            Parent map
+            <select [ngModel]="parentMapId() ?? ''" (ngModelChange)="parentMapId.set($event || null)">
+              <option value="">No parent</option>
+              @for (map of availableParentMaps(); track map.id) {
+                <option [value]="map.id">{{ map.name }} · {{ map.floorLabel }}</option>
+              }
+            </select>
+          </label>
+          <label>
             Footprint GeoJSON
             <textarea [(ngModel)]="footprintText"></textarea>
           </label>
@@ -79,6 +90,7 @@ interface InteractionState {
           <div class="canvas-header">
             <h2>Editor canvas</h2>
             <div class="actions">
+              <button type="button" class="ghost" (click)="exportSvg()">Export SVG</button>
               <button type="button" class="ghost" (click)="addRoom()">Add room</button>
               @if (selectedRoom()) {
                 <button type="button" class="danger" (click)="removeSelectedRoom()">Delete room</button>
@@ -323,6 +335,7 @@ export class MapEditorPageComponent {
   protected readonly mapId = signal<string | null>(this.route.snapshot.paramMap.get('mapId'));
   protected readonly rooms = signal<EditorRoomModel[]>([]);
   protected readonly selectedRoomId = signal<string | null>(null);
+  protected readonly parentMapId = signal<string | null>(null);
   protected readonly error = signal('');
   protected readonly message = signal('');
 
@@ -343,11 +356,20 @@ export class MapEditorPageComponent {
   private currentMap: MapDto | null = null;
   private interaction: InteractionState | null = null;
   private backgroundFile: File | null = null;
+  private pendingBackgroundUrl: string | null = null;
+  private parentMapOptions = signal<MapSummaryDto[]>([]);
 
   constructor() {
+    void this.loadParentMapOptions();
+
     if (this.mapId()) {
       void this.loadMap(this.mapId()!);
     }
+  }
+
+  protected availableParentMaps(): MapSummaryDto[] {
+    const currentMapId = this.mapId();
+    return this.parentMapOptions().filter((map) => map.id !== currentMapId);
   }
 
   protected loadSampleFootprint(): void {
@@ -367,7 +389,23 @@ export class MapEditorPageComponent {
 
   protected onBackgroundSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    this.backgroundFile = input.files?.[0] ?? null;
+    const selectedFile = input.files?.[0] ?? null;
+    this.backgroundFile = selectedFile;
+    this.pendingBackgroundUrl = null;
+
+    if (!selectedFile) {
+      return;
+    }
+
+    void readBlobAsDataUrl(selectedFile)
+      .then((dataUrl) => {
+        if (this.backgroundFile === selectedFile) {
+          this.pendingBackgroundUrl = dataUrl;
+        }
+      })
+      .catch(() => {
+        this.error.set('The selected background image could not be loaded.');
+      });
   }
 
   protected parsedFootprint(): GeoJsonPolygon | null {
@@ -397,7 +435,7 @@ export class MapEditorPageComponent {
   }
 
   protected backgroundUrl(): string | null {
-    return assetUrl(this.currentMap?.backgroundImageUrl ?? null);
+    return this.pendingBackgroundUrl ?? assetUrl(this.currentMap?.backgroundImageUrl ?? null);
   }
 
   protected selectedRoom(): EditorRoomModel | null {
@@ -541,6 +579,7 @@ export class MapEditorPageComponent {
         name: this.name,
         floorLabel: this.floorLabel,
         timezone: this.timezone,
+        parentMapId: this.parentMapId(),
         footprintGeoJson: footprint,
       };
 
@@ -556,6 +595,7 @@ export class MapEditorPageComponent {
       if (this.backgroundFile) {
         this.currentMap = await this.mapsService.uploadBackground(this.currentMap.id, this.backgroundFile);
         this.backgroundFile = null;
+        this.pendingBackgroundUrl = null;
       }
 
       this.message.set('Map saved.');
@@ -602,12 +642,34 @@ export class MapEditorPageComponent {
     }
   }
 
+  protected async exportSvg(): Promise<void> {
+    const footprint = this.parsedFootprint();
+    if (!footprint) {
+      this.error.set('The footprint GeoJSON is invalid.');
+      return;
+    }
+
+    this.error.set('');
+    this.message.set('');
+
+    try {
+      await downloadMapSvg(this.buildDraftExportMap(footprint), {
+        backgroundHref: this.pendingBackgroundUrl ?? this.currentMap?.backgroundImageUrl ?? null,
+      });
+      this.message.set('Downloaded current draft as SVG.');
+    } catch (error) {
+      this.error.set(this.extractMessage(error));
+    }
+  }
+
   private async loadMap(mapId: string): Promise<void> {
     try {
       this.currentMap = await this.mapsService.get(mapId);
+      this.pendingBackgroundUrl = null;
       this.name = this.currentMap.name;
       this.floorLabel = this.currentMap.floorLabel;
       this.timezone = this.currentMap.timezone;
+      this.parentMapId.set(this.currentMap.parentMapId);
       this.footprintText = JSON.stringify(this.currentMap.footprintGeoJson, null, 2);
       this.rooms.set(
         this.currentMap.rooms.map((room) =>
@@ -622,6 +684,30 @@ export class MapEditorPageComponent {
     } catch (error) {
       this.error.set(this.extractMessage(error));
     }
+  }
+
+  private async loadParentMapOptions(): Promise<void> {
+    try {
+      this.parentMapOptions.set(await this.mapsService.list());
+    } catch (error) {
+      this.error.set(this.extractMessage(error));
+    }
+  }
+
+  private buildDraftExportMap(footprint: GeoJsonPolygon): ExportableMap {
+    return {
+      name: this.name,
+      floorLabel: this.floorLabel,
+      timezone: this.timezone,
+      backgroundImageUrl: this.currentMap?.backgroundImageUrl ?? null,
+      footprintGeoJson: footprint,
+      rooms: this.rooms().map((room, index) => ({
+        name: room.name,
+        color: room.color,
+        sortOrder: index,
+        geometryGeoJson: roomModelToPolygon(room),
+      })),
+    };
   }
 
   private toSvgPoint(event: PointerEvent): { x: number; y: number } | null {
@@ -644,6 +730,10 @@ export class MapEditorPageComponent {
   }
 
   private extractMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+
     if (typeof error === 'object' && error && 'error' in error) {
       return ((error as { error?: { message?: string } }).error?.message) ?? 'Request failed.';
     }
