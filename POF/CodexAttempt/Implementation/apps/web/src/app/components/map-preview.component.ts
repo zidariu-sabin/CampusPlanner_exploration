@@ -8,15 +8,23 @@ import { assetUrl } from '../core/api';
   standalone: true,
   template: `
     <svg class="map-preview-svg" [class.compact]="compact()" [attr.viewBox]="viewBox()">
+      <defs>
+        <clipPath [attr.id]="backgroundClipPathId">
+          <polygon [attr.points]="footprintPoints()" />
+        </clipPath>
+      </defs>
+
       @if (backgroundUrl()) {
-        <image
-          [attr.href]="backgroundUrl()!"
-          [attr.x]="bounds().minX"
-          [attr.y]="bounds().minY"
-          [attr.width]="bounds().width"
-          [attr.height]="bounds().height"
-          preserveAspectRatio="none"
-        />
+        <g [attr.clip-path]="'url(#' + backgroundClipPathId + ')'">
+          <image
+            [attr.href]="backgroundUrl()!"
+            [attr.x]="bounds().minX"
+            [attr.y]="bounds().minY"
+            [attr.width]="bounds().width"
+            [attr.height]="bounds().height"
+            preserveAspectRatio="none"
+          />
+        </g>
       }
 
       <polygon class="footprint" [attr.points]="footprintPoints()" />
@@ -84,6 +92,8 @@ import { assetUrl } from '../core/api';
   `,
 })
 export class MapPreviewComponent {
+  protected readonly backgroundClipPathId = `map-preview-clip-${Math.random().toString(36).slice(2)}`;
+
   readonly map = input.required<MapDto>();
   readonly compact = input(false);
   readonly selectable = input(false);

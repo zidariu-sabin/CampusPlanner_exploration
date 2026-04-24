@@ -11,6 +11,7 @@ import { FloorMapEntity } from '../entities/floor-map.entity.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { getMapOrFail, replaceRooms, resolveParentMapIdOrFail } from '../services/map.service.js';
 import { asyncHandler } from '../utils/async-handler.js';
+import { processMapBackgroundImage } from '../utils/background-image.js';
 import { HttpError } from '../utils/http-error.js';
 import { toMapDto, toMapSummaryDto } from '../utils/serializers.js';
 import { ensurePolygon } from '../utils/validation.js';
@@ -42,6 +43,37 @@ const replaceRoomsSchema = z.object({
     }),
   ),
 });
+
+const processBackgroundImageSchema = z
+  .object({
+    rotationQuarterTurns: z.number().int().min(0).max(3),
+    scale: z.number().positive().min(0.25).max(3),
+    offsetX: z.number().finite().min(-2).max(2),
+    offsetY: z.number().finite().min(-2).max(2),
+    cropRect: z.object({
+      x: z.number().finite().min(0).max(1),
+      y: z.number().finite().min(0).max(1),
+      width: z.number().finite().positive().max(1),
+      height: z.number().finite().positive().max(1),
+    }),
+  })
+  .superRefine((body, context) => {
+    if (body.cropRect.x + body.cropRect.width > 1) {
+      context.addIssue({
+        code: 'custom',
+        path: ['cropRect', 'width'],
+        message: 'Crop rectangle extends beyond the normalized image viewport.',
+      });
+    }
+
+    if (body.cropRect.y + body.cropRect.height > 1) {
+      context.addIssue({
+        code: 'custom',
+        path: ['cropRect', 'height'],
+        message: 'Crop rectangle extends beyond the normalized image viewport.',
+      });
+    }
+  });
 
 await fs.mkdir(config.uploadsDir, { recursive: true });
 
@@ -133,8 +165,41 @@ mapsRouter.post(
     }
 
     const map = await getMapOrFail(routeParam(request.params.mapId, 'mapId'));
+    const previousBackgroundImageUrl = map.backgroundImageUrl;
     map.backgroundImageUrl = `/uploads/${request.file.filename}`;
     await AppDataSource.getRepository(FloorMapEntity).save(map);
+    await deleteManagedUpload(previousBackgroundImageUrl);
+
+    response.json(toMapDto(await getMapOrFail(map.id)));
+  }),
+);
+
+mapsRouter.post(
+  '/:mapId/background-image/process',
+  authenticate,
+  requireRole('admin'),
+  asyncHandler(async (request, response) => {
+    const body = processBackgroundImageSchema.parse(request.body);
+    const map = await getMapOrFail(routeParam(request.params.mapId, 'mapId'));
+
+    if (!map.backgroundImageUrl) {
+      throw new HttpError(400, 'Upload a background image before applying image edits.');
+    }
+
+    const sourcePath = managedUploadPath(map.backgroundImageUrl);
+    if (!sourcePath) {
+      throw new HttpError(400, 'Only locally uploaded background images can be processed.');
+    }
+
+    const processedBackground = await processMapBackgroundImage(sourcePath, map.footprintGeoJson, body);
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
+    const outputPath = path.join(config.uploadsDir, fileName);
+    const previousBackgroundImageUrl = map.backgroundImageUrl;
+
+    await fs.writeFile(outputPath, processedBackground);
+    map.backgroundImageUrl = `/uploads/${fileName}`;
+    await AppDataSource.getRepository(FloorMapEntity).save(map);
+    await deleteManagedUpload(previousBackgroundImageUrl);
 
     response.json(toMapDto(await getMapOrFail(map.id)));
   }),
@@ -157,3 +222,27 @@ mapsRouter.put(
     response.json(toMapDto(map));
   }),
 );
+
+function managedUploadPath(backgroundImageUrl: string | null): string | null {
+  if (!backgroundImageUrl || !backgroundImageUrl.startsWith('/uploads/')) {
+    return null;
+  }
+
+  return path.join(config.uploadsDir, path.basename(backgroundImageUrl));
+}
+
+async function deleteManagedUpload(backgroundImageUrl: string | null): Promise<void> {
+  const uploadPath = managedUploadPath(backgroundImageUrl);
+  if (!uploadPath) {
+    return;
+  }
+
+  try {
+    await fs.unlink(uploadPath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      throw error;
+    }
+  }
+}

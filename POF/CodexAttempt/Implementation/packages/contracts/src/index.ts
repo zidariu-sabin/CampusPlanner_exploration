@@ -72,6 +72,21 @@ export interface CreateMapRequest {
 
 export interface UpdateMapRequest extends CreateMapRequest {}
 
+export interface NormalizedRectangle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ProcessBackgroundImageRequest {
+  rotationQuarterTurns: number;
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  cropRect: NormalizedRectangle;
+}
+
 export interface EditableRoomInput {
   id?: string;
   name: string;

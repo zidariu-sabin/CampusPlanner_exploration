@@ -53,15 +53,23 @@ import { UsersService } from '../core/users.service';
 
           @if (map()) {
             <svg class="viewer-svg" [attr.viewBox]="viewBox()">
+              <defs>
+                <clipPath [attr.id]="backgroundClipPathId">
+                  <polygon [attr.points]="footprintPoints()" />
+                </clipPath>
+              </defs>
+
               @if (backgroundUrl()) {
-                <image
-                  [attr.href]="backgroundUrl()!"
-                  [attr.x]="bounds().minX"
-                  [attr.y]="bounds().minY"
-                  [attr.width]="bounds().width"
-                  [attr.height]="bounds().height"
-                  preserveAspectRatio="none"
-                />
+                <g [attr.clip-path]="'url(#' + backgroundClipPathId + ')'">
+                  <image
+                    [attr.href]="backgroundUrl()!"
+                    [attr.x]="bounds().minX"
+                    [attr.y]="bounds().minY"
+                    [attr.width]="bounds().width"
+                    [attr.height]="bounds().height"
+                    preserveAspectRatio="none"
+                  />
+                </g>
               }
 
               <polygon class="footprint" [attr.points]="footprintPoints()" />
@@ -240,6 +248,7 @@ export class MapBookingFormComponent implements OnInit {
   private readonly mapsService = inject(MapsService);
   private readonly meetingsService = inject(MeetingsService);
   private readonly usersService = inject(UsersService);
+  protected readonly backgroundClipPathId = `map-booking-clip-${Math.random().toString(36).slice(2)}`;
   protected readonly auth = inject(AuthService);
 
   protected readonly map = signal<MapDto | null>(null);

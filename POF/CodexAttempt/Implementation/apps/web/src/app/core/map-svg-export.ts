@@ -65,6 +65,7 @@ export async function buildMapSvg(map: ExportableMap, options: MapSvgExportOptio
   </defs>
   ${buildMapScene(map, {
     backgroundHref,
+    clipPathId: 'map-background-clip',
     includeLabels,
     gridPatternId: 'grid-pattern',
     rooms,
@@ -166,6 +167,7 @@ export async function buildMapCollectionSvg(
     >
       ${buildMapScene(map, {
         backgroundHref: map.backgroundHref,
+        clipPathId: `map-background-clip-${map.exportId}`,
         includeLabels,
         gridPatternId: 'collection-grid-pattern',
         rooms: map.rooms,
@@ -249,16 +251,24 @@ function buildMapScene(
   map: ExportableMap,
   options: {
     backgroundHref: string | null;
+    clipPathId: string;
     gridPatternId: string;
     includeLabels: boolean;
     rooms: ExportableRoom[];
     viewport: ReturnType<typeof getMapViewport>;
   },
 ): string {
-  return `<rect x="${options.viewport.minX}" y="${options.viewport.minY}" width="${options.viewport.width}" height="${options.viewport.height}" fill="url(#${escapeAttribute(options.gridPatternId)})" />
+  return `<defs>
+    <clipPath id="${escapeAttribute(options.clipPathId)}">
+      <polygon points="${escapeAttribute(polygonToPointsAttribute(map.footprintGeoJson))}" />
+    </clipPath>
+  </defs>
+  <rect x="${options.viewport.minX}" y="${options.viewport.minY}" width="${options.viewport.width}" height="${options.viewport.height}" fill="url(#${escapeAttribute(options.gridPatternId)})" />
   ${
     options.backgroundHref
-      ? `<image href="${escapeAttribute(options.backgroundHref)}" x="${options.viewport.bounds.minX}" y="${options.viewport.bounds.minY}" width="${options.viewport.bounds.width}" height="${options.viewport.bounds.height}" preserveAspectRatio="none" />`
+      ? `<g clip-path="url(#${escapeAttribute(options.clipPathId)})">
+      <image href="${escapeAttribute(options.backgroundHref)}" x="${options.viewport.bounds.minX}" y="${options.viewport.bounds.minY}" width="${options.viewport.bounds.width}" height="${options.viewport.bounds.height}" preserveAspectRatio="none" />
+    </g>`
       : ''
   }
   <polygon points="${escapeAttribute(polygonToPointsAttribute(map.footprintGeoJson))}" fill="#115e59" fill-opacity="0.08" stroke="#115e59" stroke-width="2.5" />

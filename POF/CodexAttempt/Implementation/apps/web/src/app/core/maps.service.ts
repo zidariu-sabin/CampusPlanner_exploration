@@ -4,6 +4,7 @@ import {
   CreateMapRequest,
   MapDto,
   MapSummaryDto,
+  ProcessBackgroundImageRequest,
   ReplaceRoomsRequest,
   UpdateMapRequest,
 } from '@campus/contracts';
@@ -40,5 +41,8 @@ export class MapsService {
     formData.append('image', file);
     return firstValueFrom(this.http.post<MapDto>(apiUrl(`/maps/${mapId}/background-image`), formData));
   }
-}
 
+  processBackground(mapId: string, payload: ProcessBackgroundImageRequest): Promise<MapDto> {
+    return firstValueFrom(this.http.post<MapDto>(apiUrl(`/maps/${mapId}/background-image/process`), payload));
+  }
+}

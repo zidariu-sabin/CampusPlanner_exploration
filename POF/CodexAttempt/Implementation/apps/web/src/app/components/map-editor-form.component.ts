@@ -16,19 +16,61 @@ import {
   roomModelToPolygon,
 } from '@campus/contracts';
 
+import {
+  type EditorRectangle,
+  clampBackgroundScale,
+  clampCropRect,
+  createDefaultCropRect,
+  createMinimumCropSize,
+  getBackgroundImageRect,
+  quarterTurnsToDegrees,
+  toBackgroundProcessRequest,
+} from '../core/background-image-editor';
 import { assetUrl } from '../core/api';
 import { downloadMapSvg, readBlobAsDataUrl, type ExportableMap } from '../core/map-svg-export';
 import { MapsService } from '../core/maps.service';
 
-type InteractionMode = 'drag' | 'resize';
+type RoomInteractionMode = 'drag' | 'resize';
+type CanvasMode = 'rooms' | 'image' | 'crop';
+type CropHandle = 'nw' | 'ne' | 'se' | 'sw';
 
-interface InteractionState {
+interface RoomInteractionState {
+  kind: 'room';
   roomId: string;
-  mode: InteractionMode;
+  mode: RoomInteractionMode;
   startX: number;
   startY: number;
   initial: EditorRoomModel;
 }
+
+interface BackgroundPanInteractionState {
+  kind: 'background-pan';
+  startX: number;
+  startY: number;
+  initialOffsetX: number;
+  initialOffsetY: number;
+}
+
+interface CropMoveInteractionState {
+  kind: 'crop-move';
+  startX: number;
+  startY: number;
+  initial: EditorRectangle;
+}
+
+interface CropResizeInteractionState {
+  kind: 'crop-resize';
+  handle: CropHandle;
+  startX: number;
+  startY: number;
+  initial: EditorRectangle;
+}
+
+type InteractionState =
+  | RoomInteractionState
+  | BackgroundPanInteractionState
+  | CropMoveInteractionState
+  | CropResizeInteractionState;
 
 @Component({
   selector: 'app-map-editor-form',
@@ -44,7 +86,7 @@ interface InteractionState {
         <div class="chips">
           <span class="chip">SVG editor</span>
           <span class="chip">GeoJSON native</span>
-          <span class="chip">Image overlay</span>
+          <span class="chip">Image tools</span>
         </div>
       </section>
 
@@ -79,6 +121,103 @@ interface InteractionState {
             Background image
             <input type="file" accept="image/*" (change)="onBackgroundSelected($event)" />
           </label>
+
+          <section class="tool-section">
+            <div class="section-header">
+              <div>
+                <h3>Image tools</h3>
+                <p class="muted">Rotate, scale, drag, and crop the floor-plan image before mapping rooms.</p>
+              </div>
+              <span class="chip">{{ canUseImageTools() ? 'Ready' : 'No image' }}</span>
+            </div>
+
+            <div class="segmented">
+              <button
+                type="button"
+                class="ghost"
+                [class.active]="canvasMode() === 'rooms'"
+                [disabled]="!canUseImageTools()"
+                (click)="canvasMode.set('rooms')"
+              >
+                Rooms
+              </button>
+              <button
+                type="button"
+                class="ghost"
+                [class.active]="canvasMode() === 'image'"
+                [disabled]="!canUseImageTools()"
+                (click)="canvasMode.set('image')"
+              >
+                Move image
+              </button>
+              <button
+                type="button"
+                class="ghost"
+                [class.active]="canvasMode() === 'crop'"
+                [disabled]="!canUseImageTools()"
+                (click)="canvasMode.set('crop')"
+              >
+                Crop
+              </button>
+            </div>
+
+            <div class="tool-grid">
+              <label>
+                Scale
+                <input
+                  type="range"
+                  min="0.25"
+                  max="3"
+                  step="0.05"
+                  [ngModel]="backgroundScale"
+                  (ngModelChange)="setBackgroundScale($event)"
+                  [disabled]="!canUseImageTools()"
+                />
+              </label>
+              <label>
+                Scale value
+                <input
+                  type="number"
+                  min="0.25"
+                  max="3"
+                  step="0.05"
+                  [ngModel]="backgroundScale"
+                  (ngModelChange)="setBackgroundScale($event)"
+                  [disabled]="!canUseImageTools()"
+                />
+              </label>
+              <label>
+                Offset X
+                <input type="number" step="1" [(ngModel)]="backgroundOffsetX" [disabled]="!canUseImageTools()" />
+              </label>
+              <label>
+                Offset Y
+                <input type="number" step="1" [(ngModel)]="backgroundOffsetY" [disabled]="!canUseImageTools()" />
+              </label>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="ghost" (click)="rotateBackground(-1)" [disabled]="!canUseImageTools()">
+                Rotate left
+              </button>
+              <button type="button" class="ghost" (click)="rotateBackground(1)" [disabled]="!canUseImageTools()">
+                Rotate right
+              </button>
+              <button type="button" class="ghost" (click)="resetBackgroundEdits()" [disabled]="!canUseImageTools()">
+                Reset edits
+              </button>
+              <button
+                type="button"
+                (click)="applyBackgroundEdits()"
+                [disabled]="!canApplyBackgroundEdits()"
+              >
+                {{ processingBackground() ? 'Applying...' : 'Apply edits' }}
+              </button>
+            </div>
+
+            <p class="muted tool-muted">{{ backgroundToolHint() }}</p>
+          </section>
+
           <div class="actions">
             <button type="button" class="ghost" (click)="loadSampleFootprint()">Use sample footprint</button>
             <button type="button" (click)="saveMap()">Save map</button>
@@ -97,20 +236,61 @@ interface InteractionState {
             </div>
           </div>
 
+          <p class="muted canvas-mode-hint">{{ canvasModeHint() }}</p>
+
           @if (parsedFootprint()) {
-            <svg
-              #svgCanvas
-              class="editor-svg"
-              [attr.viewBox]="viewBox()"
-            >
+            <svg #svgCanvas class="editor-svg" [attr.viewBox]="viewBox()">
+              <defs>
+                <clipPath [attr.id]="backgroundClipPathId">
+                  <polygon [attr.points]="footprintPoints()" />
+                </clipPath>
+              </defs>
+
               @if (backgroundUrl()) {
-                <image
-                  [attr.href]="backgroundUrl()!"
+                @if (canvasMode() === 'crop') {
+                  <g [attr.clip-path]="'url(#' + backgroundClipPathId + ')'">
+                    <image
+                      [attr.href]="backgroundUrl()!"
+                      [attr.x]="backgroundImageRect().x"
+                      [attr.y]="backgroundImageRect().y"
+                      [attr.width]="backgroundImageRect().width"
+                      [attr.height]="backgroundImageRect().height"
+                      preserveAspectRatio="none"
+                      [attr.transform]="backgroundRotationTransform()"
+                    />
+                  </g>
+                } @else {
+                  <g [attr.clip-path]="'url(#' + backgroundClipPathId + ')'">
+                    <svg
+                      [attr.x]="bounds().minX"
+                      [attr.y]="bounds().minY"
+                      [attr.width]="bounds().width"
+                      [attr.height]="bounds().height"
+                      [attr.viewBox]="backgroundPreviewViewBox()"
+                      preserveAspectRatio="none"
+                    >
+                      <image
+                        [attr.href]="backgroundUrl()!"
+                        [attr.x]="backgroundImageRect().x"
+                        [attr.y]="backgroundImageRect().y"
+                        [attr.width]="backgroundImageRect().width"
+                        [attr.height]="backgroundImageRect().height"
+                        preserveAspectRatio="none"
+                        [attr.transform]="backgroundRotationTransform()"
+                      />
+                    </svg>
+                  </g>
+                }
+              }
+
+              @if (backgroundUrl() && canvasMode() === 'image') {
+                <rect
+                  class="image-pan-layer"
                   [attr.x]="bounds().minX"
                   [attr.y]="bounds().minY"
                   [attr.width]="bounds().width"
                   [attr.height]="bounds().height"
-                  preserveAspectRatio="none"
+                  (pointerdown)="startBackgroundPan($event)"
                 />
               }
 
@@ -122,24 +302,78 @@ interface InteractionState {
                     class="room-shape"
                     [class.invalid]="!isRoomValid(room)"
                     [class.selected]="selectedRoomId() === room.id"
+                    [class.inactive]="canvasMode() !== 'rooms'"
                     [attr.x]="room.x"
                     [attr.y]="room.y"
                     [attr.width]="room.width"
                     [attr.height]="room.height"
                     [attr.fill]="room.color"
+                    [style.pointer-events]="canvasMode() === 'rooms' ? 'auto' : 'none'"
                     fill-opacity="0.35"
                     stroke-width="2"
-                    (pointerdown)="startInteraction($event, room, 'drag')"
+                    (pointerdown)="startRoomInteraction($event, room, 'drag')"
                     (click)="selectedRoomId.set(room.id)"
                   />
                   <text class="room-label" [attr.x]="room.x + 6" [attr.y]="room.y + 18">{{ room.name }}</text>
                   <circle
                     class="resize-handle"
+                    [class.inactive]="canvasMode() !== 'rooms'"
+                    [style.pointer-events]="canvasMode() === 'rooms' ? 'auto' : 'none'"
                     [attr.cx]="room.x + room.width"
                     [attr.cy]="room.y + room.height"
                     r="4"
-                    (pointerdown)="startInteraction($event, room, 'resize')"
+                    (pointerdown)="startRoomInteraction($event, room, 'resize')"
                   />
+                </g>
+              }
+
+              @if (backgroundUrl() && canvasMode() === 'crop') {
+                <g class="crop-overlay">
+                  <rect
+                    class="crop-mask"
+                    [attr.x]="bounds().minX"
+                    [attr.y]="bounds().minY"
+                    [attr.width]="bounds().width"
+                    [attr.height]="displayedCropRect().y - bounds().minY"
+                  />
+                  <rect
+                    class="crop-mask"
+                    [attr.x]="bounds().minX"
+                    [attr.y]="displayedCropRect().y"
+                    [attr.width]="displayedCropRect().x - bounds().minX"
+                    [attr.height]="displayedCropRect().height"
+                  />
+                  <rect
+                    class="crop-mask"
+                    [attr.x]="displayedCropRect().x + displayedCropRect().width"
+                    [attr.y]="displayedCropRect().y"
+                    [attr.width]="bounds().maxX - (displayedCropRect().x + displayedCropRect().width)"
+                    [attr.height]="displayedCropRect().height"
+                  />
+                  <rect
+                    class="crop-mask"
+                    [attr.x]="bounds().minX"
+                    [attr.y]="displayedCropRect().y + displayedCropRect().height"
+                    [attr.width]="bounds().width"
+                    [attr.height]="bounds().maxY - (displayedCropRect().y + displayedCropRect().height)"
+                  />
+                  <rect
+                    class="crop-frame"
+                    [attr.x]="displayedCropRect().x"
+                    [attr.y]="displayedCropRect().y"
+                    [attr.width]="displayedCropRect().width"
+                    [attr.height]="displayedCropRect().height"
+                    (pointerdown)="startCropMove($event)"
+                  />
+                  @for (handle of cropHandles(); track handle.key) {
+                    <circle
+                      class="crop-handle"
+                      [attr.cx]="handle.cx"
+                      [attr.cy]="handle.cy"
+                      r="7"
+                      (pointerdown)="startCropResize($event, handle.key)"
+                    />
+                  }
                 </g>
               }
             </svg>
@@ -225,6 +459,36 @@ interface InteractionState {
       gap: 1rem;
     }
 
+    .tool-section {
+      display: grid;
+      gap: 0.9rem;
+      padding-top: 0.25rem;
+      border-top: 1px solid rgba(31, 42, 51, 0.08);
+    }
+
+    .tool-grid {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    .segmented {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .segmented .active {
+      background: rgba(14, 116, 144, 0.1);
+      border-color: rgba(14, 116, 144, 0.35);
+      color: var(--ink);
+    }
+
+    .tool-muted,
+    .canvas-mode-hint {
+      margin: 0;
+    }
+
     .editor-layout {
       align-items: start;
     }
@@ -252,12 +516,18 @@ interface InteractionState {
         white;
       background-size: 20px 20px;
       box-shadow: inset 0 0 0 1px rgba(31, 42, 51, 0.08);
+      touch-action: none;
     }
 
     .footprint {
       fill: rgba(17, 94, 89, 0.08);
       stroke: var(--brand-strong);
       stroke-width: 2.5;
+    }
+
+    .image-pan-layer {
+      fill: transparent;
+      cursor: grab;
     }
 
     .room-shape {
@@ -275,6 +545,11 @@ interface InteractionState {
       stroke-width: 3;
     }
 
+    .room-shape.inactive,
+    .resize-handle.inactive {
+      opacity: 0.45;
+    }
+
     .room-label {
       font-size: 12px;
       pointer-events: none;
@@ -285,6 +560,26 @@ interface InteractionState {
       fill: white;
       stroke: var(--ink);
       cursor: nwse-resize;
+    }
+
+    .crop-mask {
+      fill: rgba(15, 23, 42, 0.3);
+      pointer-events: none;
+    }
+
+    .crop-frame {
+      fill: transparent;
+      stroke: #0f172a;
+      stroke-width: 2;
+      stroke-dasharray: 12 6;
+      cursor: move;
+    }
+
+    .crop-handle {
+      fill: white;
+      stroke: #0f172a;
+      stroke-width: 2;
+      cursor: pointer;
     }
 
     .room-list {
@@ -341,6 +636,7 @@ export class MapEditorFormComponent implements OnInit {
 
   private readonly router = inject(Router);
   private readonly mapsService = inject(MapsService);
+  protected readonly backgroundClipPathId = `map-editor-clip-${Math.random().toString(36).slice(2)}`;
 
   protected readonly mapId = signal<string | null>(null);
   protected readonly rooms = signal<EditorRoomModel[]>([]);
@@ -348,6 +644,9 @@ export class MapEditorFormComponent implements OnInit {
   protected readonly parentMapId = signal<string | null>(null);
   protected readonly error = signal('');
   protected readonly message = signal('');
+  protected readonly canvasMode = signal<CanvasMode>('rooms');
+  protected readonly processingBackground = signal(false);
+  protected readonly cropRect = signal<EditorRectangle | null>(null);
 
   @Input({ alias: 'mapId' })
   set editorMapId(value: string | null | undefined) {
@@ -369,15 +668,20 @@ export class MapEditorFormComponent implements OnInit {
     null,
     2,
   );
+  protected backgroundScale = 1;
+  protected backgroundRotationQuarterTurns = 0;
+  protected backgroundOffsetX = 0;
+  protected backgroundOffsetY = 0;
 
   private currentMap: MapDto | null = null;
   private interaction: InteractionState | null = null;
   private backgroundFile: File | null = null;
   private pendingBackgroundUrl: string | null = null;
-  private parentMapOptions = signal<MapSummaryDto[]>([]);
+  private readonly parentMapOptions = signal<MapSummaryDto[]>([]);
 
   async ngOnInit(): Promise<void> {
     await this.loadParentMapOptions();
+    this.resetBackgroundEdits();
 
     if (this.mapId()) {
       await this.loadMap(this.mapId()!);
@@ -398,14 +702,14 @@ export class MapEditorFormComponent implements OnInit {
 
   protected headerSubtitle(): string {
     if (!this.mapId()) {
-      return 'Trace the footprint as GeoJSON, then place axis-aligned rooms inside it.';
+      return 'Trace the footprint as GeoJSON, align a background image, then place rooms inside it.';
     }
 
     if (this.embedded) {
       return 'Editing form for a child map of the currently opened map.';
     }
 
-    return 'Trace the footprint as GeoJSON, then place axis-aligned rooms inside it.';
+    return 'Trace the footprint as GeoJSON, align a background image, then place rooms inside it.';
   }
 
   protected availableParentMaps(): MapSummaryDto[] {
@@ -426,6 +730,7 @@ export class MapEditorFormComponent implements OnInit {
       null,
       2,
     );
+    this.resetBackgroundEdits();
   }
 
   protected onBackgroundSelected(event: Event): void {
@@ -433,6 +738,7 @@ export class MapEditorFormComponent implements OnInit {
     const selectedFile = input.files?.[0] ?? null;
     this.backgroundFile = selectedFile;
     this.pendingBackgroundUrl = null;
+    this.resetBackgroundEdits();
 
     if (!selectedFile) {
       return;
@@ -477,6 +783,93 @@ export class MapEditorFormComponent implements OnInit {
 
   protected backgroundUrl(): string | null {
     return this.pendingBackgroundUrl ?? assetUrl(this.currentMap?.backgroundImageUrl ?? null);
+  }
+
+  protected canUseImageTools(): boolean {
+    return !!this.backgroundUrl();
+  }
+
+  protected canApplyBackgroundEdits(): boolean {
+    return !!this.mapId() && !!this.currentMap?.backgroundImageUrl && !this.backgroundFile && !this.processingBackground();
+  }
+
+  protected backgroundToolHint(): string {
+    if (!this.backgroundUrl()) {
+      return 'Upload a floor-plan image to enable the image tools.';
+    }
+
+    if (!this.mapId()) {
+      return 'Save the map first, then upload the image and apply destructive edits.';
+    }
+
+    if (this.backgroundFile) {
+      return 'Save the map to upload the newly selected image before applying rotate, scale, or crop changes.';
+    }
+
+    return 'Preview changes locally, then apply them to generate a new saved background image.';
+  }
+
+  protected canvasModeHint(): string {
+    if (!this.canUseImageTools()) {
+      return 'Upload a background image to unlock image alignment tools.';
+    }
+
+    switch (this.canvasMode()) {
+      case 'image':
+        return 'Drag anywhere on the canvas to move the background image under the footprint.';
+      case 'crop':
+        return 'Move the crop frame or drag its handles. Leaving crop mode shows the final cropped preview.';
+      default:
+        return 'Room editing mode is active. Switch to image mode to move the background or to crop mode to trim it.';
+    }
+  }
+
+  protected rotateBackground(direction: number): void {
+    this.backgroundRotationQuarterTurns = ((this.backgroundRotationQuarterTurns + direction) % 4 + 4) % 4;
+  }
+
+  protected setBackgroundScale(value: number | string | null): void {
+    this.backgroundScale = clampBackgroundScale(Number(value));
+  }
+
+  protected resetBackgroundEdits(): void {
+    this.backgroundScale = 1;
+    this.backgroundRotationQuarterTurns = 0;
+    this.backgroundOffsetX = 0;
+    this.backgroundOffsetY = 0;
+    this.cropRect.set(createDefaultCropRect(this.bounds()));
+  }
+
+  protected backgroundImageRect(): EditorRectangle {
+    return getBackgroundImageRect(this.bounds(), this.backgroundScale, this.backgroundOffsetX, this.backgroundOffsetY);
+  }
+
+  protected backgroundRotationTransform(): string {
+    const rectangle = this.backgroundImageRect();
+    const centerX = rectangle.x + rectangle.width / 2;
+    const centerY = rectangle.y + rectangle.height / 2;
+    return `rotate(${quarterTurnsToDegrees(this.backgroundRotationQuarterTurns)} ${centerX} ${centerY})`;
+  }
+
+  protected displayedCropRect(): EditorRectangle {
+    const currentCrop = this.cropRect() ?? createDefaultCropRect(this.bounds());
+    return clampCropRect(currentCrop, this.bounds());
+  }
+
+  protected backgroundPreviewViewBox(): string {
+    const crop = this.displayedCropRect();
+    return `${crop.x} ${crop.y} ${crop.width} ${crop.height}`;
+  }
+
+  protected cropHandles(): Array<{ key: CropHandle; cx: number; cy: number }> {
+    const crop = this.displayedCropRect();
+
+    return [
+      { key: 'nw', cx: crop.x, cy: crop.y },
+      { key: 'ne', cx: crop.x + crop.width, cy: crop.y },
+      { key: 'se', cx: crop.x + crop.width, cy: crop.y + crop.height },
+      { key: 'sw', cx: crop.x, cy: crop.y + crop.height },
+    ];
   }
 
   protected selectedRoom(): EditorRoomModel | null {
@@ -546,7 +939,11 @@ export class MapEditorFormComponent implements OnInit {
       .map((room) => room.name);
   }
 
-  protected startInteraction(event: PointerEvent, room: EditorRoomModel, mode: InteractionMode): void {
+  protected startRoomInteraction(event: PointerEvent, room: EditorRoomModel, mode: RoomInteractionMode): void {
+    if (this.canvasMode() !== 'rooms') {
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
     const point = this.toSvgPoint(event);
@@ -556,11 +953,73 @@ export class MapEditorFormComponent implements OnInit {
 
     this.selectedRoomId.set(room.id);
     this.interaction = {
+      kind: 'room',
       roomId: room.id,
       mode,
       startX: point.x,
       startY: point.y,
       initial: { ...room },
+    };
+  }
+
+  protected startBackgroundPan(event: PointerEvent): void {
+    if (this.canvasMode() !== 'image' || !this.canUseImageTools()) {
+      return;
+    }
+
+    event.preventDefault();
+    const point = this.toSvgPoint(event);
+    if (!point) {
+      return;
+    }
+
+    this.interaction = {
+      kind: 'background-pan',
+      startX: point.x,
+      startY: point.y,
+      initialOffsetX: this.backgroundOffsetX,
+      initialOffsetY: this.backgroundOffsetY,
+    };
+  }
+
+  protected startCropMove(event: PointerEvent): void {
+    if (this.canvasMode() !== 'crop' || !this.canUseImageTools()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const point = this.toSvgPoint(event);
+    if (!point) {
+      return;
+    }
+
+    this.interaction = {
+      kind: 'crop-move',
+      startX: point.x,
+      startY: point.y,
+      initial: { ...this.displayedCropRect() },
+    };
+  }
+
+  protected startCropResize(event: PointerEvent, handle: CropHandle): void {
+    if (this.canvasMode() !== 'crop' || !this.canUseImageTools()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const point = this.toSvgPoint(event);
+    if (!point) {
+      return;
+    }
+
+    this.interaction = {
+      kind: 'crop-resize',
+      handle,
+      startX: point.x,
+      startY: point.y,
+      initial: { ...this.displayedCropRect() },
     };
   }
 
@@ -577,27 +1036,54 @@ export class MapEditorFormComponent implements OnInit {
 
     const deltaX = point.x - this.interaction.startX;
     const deltaY = point.y - this.interaction.startY;
-    this.rooms.update((rooms) =>
-      rooms.map((room) => {
-        if (room.id !== this.interaction?.roomId) {
-          return room;
-        }
 
-        if (this.interaction.mode === 'drag') {
+    if (this.interaction.kind === 'room') {
+      const interaction = this.interaction;
+      this.rooms.update((rooms) =>
+        rooms.map((room) => {
+          if (room.id !== interaction.roomId) {
+            return room;
+          }
+
+          if (interaction.mode === 'drag') {
+            return {
+              ...room,
+              x: interaction.initial.x + deltaX,
+              y: interaction.initial.y + deltaY,
+            };
+          }
+
           return {
             ...room,
+            width: Math.max(20, interaction.initial.width + deltaX),
+            height: Math.max(20, interaction.initial.height + deltaY),
+          };
+        }),
+      );
+      return;
+    }
+
+    if (this.interaction.kind === 'background-pan') {
+      this.backgroundOffsetX = this.interaction.initialOffsetX + deltaX;
+      this.backgroundOffsetY = this.interaction.initialOffsetY + deltaY;
+      return;
+    }
+
+    if (this.interaction.kind === 'crop-move') {
+      this.cropRect.set(
+        clampCropRect(
+          {
+            ...this.interaction.initial,
             x: this.interaction.initial.x + deltaX,
             y: this.interaction.initial.y + deltaY,
-          };
-        }
+          },
+          this.bounds(),
+        ),
+      );
+      return;
+    }
 
-        return {
-          ...room,
-          width: Math.max(20, this.interaction.initial.width + deltaX),
-          height: Math.max(20, this.interaction.initial.height + deltaY),
-        };
-      }),
-    );
+    this.cropRect.set(this.resizeCropRect(this.interaction.handle, deltaX, deltaY));
   }
 
   @HostListener('document:pointerup')
@@ -641,9 +1127,49 @@ export class MapEditorFormComponent implements OnInit {
         this.pendingBackgroundUrl = null;
       }
 
+      this.resetBackgroundEdits();
       this.message.set('Map saved.');
     } catch (error) {
       this.error.set(this.extractMessage(error));
+    }
+  }
+
+  protected async applyBackgroundEdits(): Promise<void> {
+    if (!this.canApplyBackgroundEdits()) {
+      this.error.set(this.backgroundToolHint());
+      return;
+    }
+
+    const mapId = this.mapId();
+    if (!mapId) {
+      this.error.set('Save the map before applying image edits.');
+      return;
+    }
+
+    this.error.set('');
+    this.message.set('');
+    this.processingBackground.set(true);
+
+    try {
+      this.currentMap = await this.mapsService.processBackground(
+        mapId,
+        toBackgroundProcessRequest(this.bounds(), {
+          rotationQuarterTurns: this.backgroundRotationQuarterTurns,
+          scale: this.backgroundScale,
+          offsetX: this.backgroundOffsetX,
+          offsetY: this.backgroundOffsetY,
+          cropRect: this.displayedCropRect(),
+        }),
+      );
+      this.pendingBackgroundUrl = null;
+      this.backgroundFile = null;
+      this.resetBackgroundEdits();
+      this.canvasMode.set('rooms');
+      this.message.set('Background image updated.');
+    } catch (error) {
+      this.error.set(this.extractMessage(error));
+    } finally {
+      this.processingBackground.set(false);
     }
   }
 
@@ -709,6 +1235,7 @@ export class MapEditorFormComponent implements OnInit {
     try {
       this.currentMap = await this.mapsService.get(mapId);
       this.pendingBackgroundUrl = null;
+      this.backgroundFile = null;
       this.name = this.currentMap.name;
       this.floorLabel = this.currentMap.floorLabel;
       this.timezone = this.currentMap.timezone;
@@ -724,6 +1251,7 @@ export class MapEditorFormComponent implements OnInit {
           }),
         ),
       );
+      this.resetBackgroundEdits();
     } catch (error) {
       this.error.set(this.extractMessage(error));
     }
@@ -751,6 +1279,39 @@ export class MapEditorFormComponent implements OnInit {
         geometryGeoJson: roomModelToPolygon(room),
       })),
     };
+  }
+
+  private resizeCropRect(handle: CropHandle, deltaX: number, deltaY: number): EditorRectangle {
+    const initial = this.interaction?.kind === 'crop-resize' ? this.interaction.initial : this.displayedCropRect();
+    const bounds = this.bounds();
+    const minimumSize = createMinimumCropSize(bounds);
+    let left = initial.x;
+    let right = initial.x + initial.width;
+    let top = initial.y;
+    let bottom = initial.y + initial.height;
+
+    if (handle.includes('w')) {
+      left = Math.min(left + deltaX, right - minimumSize);
+    } else {
+      right = Math.max(right + deltaX, left + minimumSize);
+    }
+
+    if (handle.includes('n')) {
+      top = Math.min(top + deltaY, bottom - minimumSize);
+    } else {
+      bottom = Math.max(bottom + deltaY, top + minimumSize);
+    }
+
+    return clampCropRect(
+      {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+      },
+      bounds,
+      minimumSize,
+    );
   }
 
   private toSvgPoint(event: PointerEvent): { x: number; y: number } | null {
