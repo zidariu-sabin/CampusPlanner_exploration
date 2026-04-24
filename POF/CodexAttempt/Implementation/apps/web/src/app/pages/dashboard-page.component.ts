@@ -122,7 +122,8 @@ export class DashboardPageComponent {
   private async load(): Promise<void> {
     try {
       const summaries = await this.mapsService.list();
-      this.maps.set(await Promise.all(summaries.map((map) => this.mapsService.get(map.id))));
+      const rootMaps = summaries.filter((map) => map.parentMapId === null);
+      this.maps.set(await Promise.all(rootMaps.map((map) => this.mapsService.get(map.id))));
     } catch (error) {
       this.error.set(this.extractMessage(error));
     }
