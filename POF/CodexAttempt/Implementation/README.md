@@ -2,6 +2,8 @@
 
 Monorepo for the first interactive campus planner milestone.
 
+For a fuller description of the application layers, database schema, map/room polygon model, and coordinate system, see [docs/project-description.md](docs/project-description.md).
+
 ## Apps
 
 - `apps/api`: Express API with TypeORM and Postgres
@@ -16,4 +18,3 @@ Monorepo for the first interactive campus planner milestone.
 4. Run `npm run dev`.
 
 The API runs migrations automatically on startup and seeds the initial admin account from the environment.
-

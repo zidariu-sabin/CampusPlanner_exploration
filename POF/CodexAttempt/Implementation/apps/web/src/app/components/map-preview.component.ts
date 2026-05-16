@@ -7,50 +7,60 @@ import { assetUrl } from '../core/api';
   selector: 'app-map-preview',
   standalone: true,
   template: `
-    <svg class="map-preview-svg" [class.compact]="compact()" [attr.viewBox]="viewBox()">
-      <defs>
-        <clipPath [attr.id]="backgroundClipPathId">
-          <polygon [attr.points]="footprintPoints()" />
-        </clipPath>
-      </defs>
-
-      @if (backgroundUrl()) {
-        <g [attr.clip-path]="'url(#' + backgroundClipPathId + ')'">
-          <image
-            [attr.href]="backgroundUrl()!"
-            [attr.x]="bounds().minX"
-            [attr.y]="bounds().minY"
-            [attr.width]="bounds().width"
-            [attr.height]="bounds().height"
-            preserveAspectRatio="none"
-          />
-        </g>
+    <div class="map-preview-frame">
+      @if (showExportAction()) {
+        <button type="button" class="ghost export-button" (click)="requestExport($event)">Export SVG</button>
       }
 
-      <polygon class="footprint" [attr.points]="footprintPoints()" />
+      <svg class="map-preview-svg" [class.compact]="compact()" [attr.viewBox]="viewBox()">
+        <defs>
+          <clipPath [attr.id]="backgroundClipPathId">
+            <polygon [attr.points]="footprintPoints()" />
+          </clipPath>
+        </defs>
 
-      @for (room of map().rooms; track room.id) {
-        <g>
-          <polygon
-            class="room-shape"
-            [class.selected]="selectedRoomId() === room.id"
-            [attr.points]="pointsForRoom(room.geometryGeoJson)"
-            [attr.fill]="room.color"
-            [style.cursor]="selectable() ? 'pointer' : 'default'"
-            fill-opacity="0.35"
-            stroke-width="2"
-            (click)="selectRoom(room.id)"
-          />
-          @if (showLabels()) {
-            <text class="room-label" [attr.x]="roomLabelX(room)" [attr.y]="roomLabelY(room)">
-              {{ room.name }}
-            </text>
-          }
-        </g>
-      }
-    </svg>
+        @if (backgroundUrl()) {
+          <g [attr.clip-path]="'url(#' + backgroundClipPathId + ')'">
+            <image
+              [attr.href]="backgroundUrl()!"
+              [attr.x]="bounds().minX"
+              [attr.y]="bounds().minY"
+              [attr.width]="bounds().width"
+              [attr.height]="bounds().height"
+              preserveAspectRatio="none"
+            />
+          </g>
+        }
+
+        <polygon class="footprint" [attr.points]="footprintPoints()" />
+
+        @for (room of map().rooms; track room.id) {
+          <g>
+            <polygon
+              class="room-shape"
+              [class.selected]="selectedRoomId() === room.id"
+              [attr.points]="pointsForRoom(room.geometryGeoJson)"
+              [attr.fill]="room.color"
+              [style.cursor]="selectable() ? 'pointer' : 'default'"
+              fill-opacity="0.35"
+              stroke-width="2"
+              (click)="selectRoom(room.id)"
+            />
+            @if (showLabels()) {
+              <text class="room-label" [attr.x]="roomLabelX(room)" [attr.y]="roomLabelY(room)">
+                {{ room.name }}
+              </text>
+            }
+          </g>
+        }
+      </svg>
+    </div>
   `,
   styles: `
+    .map-preview-frame {
+      position: relative;
+    }
+
     .map-preview-svg {
       width: 100%;
       min-height: 420px;
@@ -65,6 +75,13 @@ import { assetUrl } from '../core/api';
 
     .map-preview-svg.compact {
       min-height: 220px;
+    }
+
+    .export-button {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      z-index: 1;
     }
 
     .footprint {
@@ -98,8 +115,10 @@ export class MapPreviewComponent {
   readonly compact = input(false);
   readonly selectable = input(false);
   readonly showLabels = input(true);
+  readonly showExportAction = input(false);
   readonly selectedRoomId = input<string | null>(null);
   readonly roomSelected = output<string>();
+  readonly exportRequested = output<void>();
 
   protected bounds() {
     return getBoundingBox(this.map().footprintGeoJson);
@@ -137,5 +156,11 @@ export class MapPreviewComponent {
     if (this.selectable()) {
       this.roomSelected.emit(roomId);
     }
+  }
+
+  protected requestExport(event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.exportRequested.emit();
   }
 }
