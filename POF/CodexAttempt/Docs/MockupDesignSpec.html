@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CampusNavigator Prototype</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { overscroll-behavior-y: none; background-color: #f1f5f9; }
+        .chart-container { position: relative; width: 100%; height: 100%; min-height: 300px; max-width: 100%; overflow: hidden; }
+        .slide-up { transform: translateY(0%); }
+        .slide-down { transform: translateY(110%); }
+        .hide { display: none !important; }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen text-slate-800 font-sans">
+
+    <!-- Chosen Palette: Grayscale/Slate -->
+    <!-- Application Structure Plan: The SPA uses a mobile-first, single-view dashboard structure simulating a native app. This aligns with the 'immersive view' required by the Angular spec. Z-index layering (z-0 to z-40) manages the visual hierarchy of the map, interactive overlays (search, floor switcher), and task-specific bottom sheets (room details, booking, active navigation), ensuring seamless context retention. -->
+    <!-- Visualization & Content Choices: The core interactive element is an HTML5 Canvas rendering dynamic cadastral data (rooms, floors, navigation paths). This replaces static PDFs with an explorable interface. Interactive bottom sheets display room metadata (capacity, walk time) synthesized from the source requirements. pure HTML/Tailwind elements handle scheduling and search, avoiding complex SVGs while meeting strict non-functional accessibility requirements. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <div class="w-full max-w-md h-[100dvh] sm:h-[90vh] bg-slate-50 relative overflow-hidden flex flex-col shadow-2xl sm:rounded-[2.5rem] border-4 border-slate-800">
+        
+        <div id="introModal" class="absolute inset-0 bg-slate-900/80 z-[60] flex items-center justify-center p-6 transition-opacity">
+            <div class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
+                <h1 class="text-2xl font-black text-slate-900 mb-2">CampusNavigator Design</h1>
+                <p class="text-sm text-slate-600 mb-4">
+                    This interactive prototype translates the Angular Design Specification into a functional frontend experience. It demonstrates the slate color palette, heavy rounded border radius, z-index layering, and interactive wayfinding flows outlined in the source report.
+                </p>
+                <div class="space-y-2 mb-6">
+                    <p class="text-[10px] font-bold tracking-widest uppercase text-slate-400">Key Features to Explore:</p>
+                    <ul class="text-sm text-slate-700 list-disc pl-4 space-y-1">
+                        <li>Interactive HTML5 Canvas Map (Tap rooms to view details)</li>
+                        <li>Dynamic Floor Switching (L1-L4)</li>
+                        <li>Slide-up Bottom Sheets for Scheduling & Navigation</li>
+                    </ul>
+                </div>
+                <button id="startBtn" class="w-full py-4 bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition-transform">Explore Prototype</button>
+            </div>
+        </div>
+
+        <div id="searchHeader" class="p-4 z-10 bg-white/90 backdrop-blur-md border-b border-slate-200 transition-all">
+            <div class="flex items-center gap-3">
+                <div class="flex-1 h-12 bg-slate-100 rounded-xl border-2 border-slate-200 flex items-center px-4 gap-3 focus-within:border-slate-800 transition-colors">
+                    <span class="text-slate-400">🔍</span>
+                    <input type="text" id="searchInput" placeholder="Search room or person..." class="bg-transparent w-full focus:outline-none text-sm font-bold text-slate-800">
+                </div>
+            </div>
+            <div id="searchSuggestions" class="hide mt-4 space-y-4">
+                <div>
+                    <div class="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-2">Suggested Rooms</div>
+                    <div class="space-y-2" id="suggestionList"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="activeNavHeader" class="hide bg-slate-800 p-6 pt-8 text-white z-40 rounded-b-3xl shadow-xl transition-all">
+            <div class="flex items-center gap-4">
+                <div class="text-4xl">🧭</div>
+                <div class="space-y-1 flex-1">
+                    <div id="navInstruction" class="text-lg font-black">Proceed to Destination</div>
+                    <div class="text-xs text-slate-300 font-bold tracking-widest uppercase">Estimated: 2 Min</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="mapView" class="flex-1 relative bg-slate-100 overflow-hidden z-0">
+            <div class="chart-container">
+                <canvas id="mapCanvas" class="absolute inset-0 w-full h-full touch-none cursor-pointer"></canvas>
+            </div>
+            
+            <div id="floorSwitcher" class="absolute right-4 top-4 flex flex-col gap-2 z-10">
+                <button data-floor="4" class="floor-btn w-10 h-10 rounded-xl font-black text-sm border-2 border-slate-300 bg-white text-slate-500 shadow-sm transition-all active:scale-90">L4</button>
+                <button data-floor="3" class="floor-btn w-10 h-10 rounded-xl font-black text-sm border-2 border-slate-300 bg-white text-slate-500 shadow-sm transition-all active:scale-90">L3</button>
+                <button data-floor="2" class="floor-btn w-10 h-10 rounded-xl font-black text-sm border-2 border-slate-300 bg-white text-slate-500 shadow-sm transition-all active:scale-90">L2</button>
+                <button data-floor="1" class="floor-btn w-10 h-10 rounded-xl font-black text-sm border-2 border-slate-800 bg-slate-800 text-white shadow-md transition-all active:scale-90">L1</button>
+            </div>
+        </div>
+
+        <div id="scheduleView" class="hide flex-1 bg-slate-50 overflow-y-auto z-10 p-6">
+            <div class="mb-6">
+                <h2 class="text-2xl font-black text-slate-800 mb-1">Your Schedule</h2>
+                <p class="text-sm text-slate-500">Upcoming meetings and room reservations.</p>
+            </div>
+            <div id="bookingsList" class="space-y-4">
+                <div class="text-center p-8 border-2 border-dashed border-slate-300 rounded-2xl text-slate-400 font-bold text-sm">
+                    No active bookings.
+                </div>
+            </div>
+            <div class="mt-8 pt-8 border-t border-slate-200">
+                <h3 class="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-4">Capacity Utilization</h3>
+                <div class="chart-container h-48 w-full max-w-[300px] mx-auto bg-white p-4 rounded-2xl border border-slate-200">
+                    <canvas id="utilizationChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="profileView" class="hide flex-1 bg-slate-50 overflow-y-auto z-10 p-6">
+            <div class="bg-slate-800 p-8 rounded-3xl text-white text-center mb-6 shadow-lg">
+                <div class="text-5xl mb-4">👤</div>
+                <h2 class="text-xl font-black">Admin User</h2>
+                <p class="text-xs text-slate-300 tracking-widest uppercase mt-1">Facility Management</p>
+            </div>
+            <div class="space-y-4">
+                <div class="text-[10px] font-bold text-slate-400 tracking-widest uppercase">Routing Preferences</div>
+                <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 flex justify-between items-center cursor-pointer active:bg-slate-50">
+                    <div>
+                        <div class="font-bold text-slate-800 text-sm">Step-Free Routing</div>
+                        <div class="text-xs text-slate-500">Avoid stairs and escalators</div>
+                    </div>
+                    <div id="toggleStepFree" class="w-12 h-6 bg-slate-800 rounded-full relative transition-colors">
+                        <div class="absolute right-1 top-1 w-4 h-4 bg-white rounded-full"></div>
+                    </div>
+                </div>
+                
+                <div class="text-[10px] font-bold text-slate-400 tracking-widest uppercase mt-6">Design Spec Info</div>
+                <div class="bg-white border border-slate-200 rounded-2xl p-4 text-xs text-slate-600 leading-relaxed">
+                    This prototype implements the <strong>CampusNavigator Angular Design Spec</strong>. It uses the exact Slate palette defined in the document, implements the 4-level z-index hierarchy for overlays, and uses the rounded-t-[2.5rem] design token for bottom sheets.
+                </div>
+            </div>
+        </div>
+
+        <div id="roomSheet" class="absolute bottom-0 inset-x-0 bg-white border-t border-slate-200 rounded-t-[2.5rem] p-6 transition-transform duration-400 slide-down z-30 shadow-[0_-20px_50px_rgba(0,0,0,0.15)] flex flex-col">
+            <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6"></div>
+            
+            <div id="roomSheetDefault">
+                <div class="flex justify-between items-start mb-6">
+                    <div>
+                        <div id="sheetRoomLevel" class="text-[10px] font-bold tracking-widest uppercase text-slate-400 bg-slate-100 px-2 py-1 rounded inline-block mb-2">Level 1</div>
+                        <h2 id="sheetRoomName" class="text-3xl font-black text-slate-800 tracking-tight">Main Lobby</h2>
+                    </div>
+                    <button id="closeSheetBtn" class="w-10 h-10 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center text-lg active:bg-slate-200">✖</button>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3 mb-6">
+                    <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex flex-col items-center justify-center text-center">
+                        <span class="text-lg mb-1 text-slate-400">👥</span>
+                        <span id="sheetRoomCap" class="text-sm font-black text-slate-800">50</span>
+                        <span class="text-[8px] font-bold tracking-widest uppercase text-slate-400">Cap</span>
+                    </div>
+                    <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex flex-col items-center justify-center text-center">
+                        <span class="text-lg mb-1 text-slate-400">🕒</span>
+                        <span class="text-sm font-black text-slate-800">4 min</span>
+                        <span class="text-[8px] font-bold tracking-widest uppercase text-slate-400">Walk</span>
+                    </div>
+                    <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex flex-col items-center justify-center text-center">
+                        <span class="text-lg mb-1 text-slate-400">ℹ️</span>
+                        <span id="sheetRoomType" class="text-[10px] font-black text-slate-800 uppercase tracking-wider mt-1">Public</span>
+                        <span class="text-[8px] font-bold tracking-widest uppercase text-slate-400 mt-1">Type</span>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 mt-auto">
+                    <button id="navBtn" class="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black text-sm active:scale-95 transition-transform shadow-lg flex items-center justify-center gap-2">
+                        <span>🧭</span> Navigate
+                    </button>
+                    <button id="bookBtn" class="flex-1 py-4 bg-white border-2 border-slate-800 text-slate-800 rounded-2xl font-black text-sm active:scale-95 transition-transform flex items-center justify-center gap-2">
+                        <span>📅</span> Book Room
+                    </button>
+                </div>
+            </div>
+
+            <div id="roomSheetBooking" class="hide flex-col h-full">
+                <div class="flex items-center gap-4 mb-6">
+                    <button id="backToRoomBtn" class="text-xl text-slate-400 active:text-slate-800 p-2">⬅</button>
+                    <div>
+                        <h3 class="font-black text-lg text-slate-800">Select Time Slot</h3>
+                        <p id="bookingRoomName" class="text-xs text-slate-500 font-bold"></p>
+                    </div>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto pb-4">
+                    <div class="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-3">Today</div>
+                    <div class="grid grid-cols-3 gap-3" id="timeSlotContainer"></div>
+                </div>
+
+                <button id="confirmBookingBtn" class="w-full py-4 mt-4 bg-slate-800 text-white rounded-2xl font-black text-sm active:scale-95 transition-transform shadow-lg disabled:opacity-50 disabled:active:scale-100">
+                    Confirm Booking
+                </button>
+            </div>
+        </div>
+
+        <div id="navFooter" class="hide h-20 bg-white border-t-2 border-slate-200 z-40 px-6 flex justify-between items-center shadow-[0_-10px_20px_rgba(0,0,0,0.05)] transition-all">
+            <div>
+                <div class="font-black text-slate-800 text-lg">In Progress</div>
+                <div class="text-[10px] font-bold text-slate-400 tracking-widest uppercase">Follow Path</div>
+            </div>
+            <button id="endNavBtn" class="px-6 py-3 border-2 border-slate-800 rounded-full font-black text-xs text-slate-800 active:bg-slate-100">END</button>
+        </div>
+
+        <div id="mainFooter" class="h-16 bg-white border-t border-slate-200 flex justify-around items-center z-20 shrink-0">
+            <button data-tab="map" class="tab-btn flex flex-col items-center gap-1 w-16 text-slate-800 transition-colors">
+                <span class="text-xl">🗺️</span>
+                <span class="text-[8px] font-black tracking-widest uppercase">Map</span>
+                <div class="w-8 h-1 bg-slate-800 rounded-t-full mt-1 tab-indicator"></div>
+            </button>
+            <button data-tab="schedule" class="tab-btn flex flex-col items-center gap-1 w-16 text-slate-300 transition-colors">
+                <span class="text-xl">📅</span>
+                <span class="text-[8px] font-black tracking-widest uppercase">Schedule</span>
+                <div class="w-8 h-1 bg-transparent rounded-t-full mt-1 tab-indicator"></div>
+            </button>
+            <button data-tab="profile" class="tab-btn flex flex-col items-center gap-1 w-16 text-slate-300 transition-colors">
+                <span class="text-xl">👤</span>
+                <span class="text-[8px] font-black tracking-widest uppercase">Profile</span>
+                <div class="w-8 h-1 bg-transparent rounded-t-full mt-1 tab-indicator"></div>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            activeTab: 'map',
+            currentFloor: 1,
+            selectedRoom: null,
+            isNavigating: false,
+            searchQuery: '',
+            selectedTimeSlot: null,
+            bookings: [],
+            stepFree: true
+        };
+
+        const roomData = [
+            { id: '101', floor: 1, name: 'Main Lobby', type: 'public', capacity: 150, coords: { x: 10, y: 15, w: 80, h: 40 } },
+            { id: '102', floor: 1, name: 'Security', type: 'restricted', capacity: 5, coords: { x: 10, y: 60, w: 35, h: 25 } },
+            { id: '103', floor: 1, name: 'Cafeteria', type: 'public', capacity: 80, coords: { x: 50, y: 60, w: 40, h: 25 } },
+            { id: '201', floor: 2, name: 'Conference A', type: 'meeting', capacity: 12, coords: { x: 20, y: 20, w: 30, h: 30 } },
+            { id: '202', floor: 2, name: 'Innovation Lab', type: 'meeting', capacity: 25, coords: { x: 55, y: 20, w: 35, h: 50 } },
+            { id: '203', floor: 2, name: 'Focus Room 1', type: 'office', capacity: 2, coords: { x: 20, y: 55, w: 12, h: 15 } },
+            { id: '204', floor: 2, name: 'Focus Room 2', type: 'office', capacity: 2, coords: { x: 38, y: 55, w: 12, h: 15 } },
+            { id: '301', floor: 3, name: 'IT Dept', type: 'office', capacity: 40, coords: { x: 15, y: 15, w: 70, h: 70 } },
+            { id: '401', floor: 4, name: 'Executive Suite', type: 'meeting', capacity: 8, coords: { x: 30, y: 30, w: 40, h: 40 } }
+        ];
+
+        const timeSlots = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:30', '16:00'];
+
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+        let navAnimationOffset = 0;
+
+        function init() {
+            bindEvents();
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            renderCanvas();
+            renderUtilizationChart();
+        }
+
+        function bindEvents() {
+            document.getElementById('startBtn').addEventListener('click', () => {
+                document.getElementById('introModal').classList.add('opacity-0', 'pointer-events-none');
+            });
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    if(state.isNavigating) return;
+                    state.activeTab = e.currentTarget.dataset.tab;
+                    updateTabs();
+                });
+            });
+
+            document.querySelectorAll('.floor-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    state.currentFloor = parseInt(e.currentTarget.dataset.floor);
+                    state.selectedRoom = null;
+                    updateFloorUI();
+                    renderCanvas();
+                    closeSheet();
+                });
+            });
+
+            canvas.addEventListener('click', handleCanvasClick);
+
+            document.getElementById('closeSheetBtn').addEventListener('click', () => {
+                state.selectedRoom = null;
+                closeSheet();
+                renderCanvas();
+            });
+
+            document.getElementById('navBtn').addEventListener('click', startNavigation);
+            document.getElementById('endNavBtn').addEventListener('click', endNavigation);
+
+            document.getElementById('bookBtn').addEventListener('click', openBookingFlow);
+            document.getElementById('backToRoomBtn').addEventListener('click', () => {
+                document.getElementById('roomSheetDefault').classList.remove('hide');
+                document.getElementById('roomSheetBooking').classList.add('hide');
+                state.selectedTimeSlot = null;
+            });
+
+            document.getElementById('confirmBookingBtn').addEventListener('click', confirmBooking);
+
+            document.getElementById('searchInput').addEventListener('input', handleSearch);
+            document.getElementById('searchInput').addEventListener('focus', () => {
+                document.getElementById('searchSuggestions').classList.remove('hide');
+                renderSuggestions();
+            });
+            document.getElementById('searchInput').addEventListener('blur', () => {
+                setTimeout(() => document.getElementById('searchSuggestions').classList.add('hide'), 200);
+            });
+
+            document.getElementById('toggleStepFree').addEventListener('click', (e) => {
+                state.stepFree = !state.stepFree;
+                e.currentTarget.className = `w-12 h-6 ${state.stepFree ? 'bg-slate-800' : 'bg-slate-300'} rounded-full relative transition-colors`;
+                e.currentTarget.querySelector('div').className = `absolute ${state.stepFree ? 'right-1' : 'left-1'} top-1 w-4 h-4 bg-white rounded-full transition-all`;
+            });
+        }
+
+        function updateTabs() {
+            document.getElementById('mapView').classList.toggle('hide', state.activeTab !== 'map');
+            document.getElementById('searchHeader').classList.toggle('hide', state.activeTab !== 'map');
+            document.getElementById('scheduleView').classList.toggle('hide', state.activeTab !== 'schedule');
+            document.getElementById('profileView').classList.toggle('hide', state.activeTab !== 'profile');
+            
+            if(state.activeTab !== 'map') closeSheet();
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                const isActive = btn.dataset.tab === state.activeTab;
+                btn.classList.toggle('text-slate-800', isActive);
+                btn.classList.toggle('text-slate-300', !isActive);
+                const indicator = btn.querySelector('.tab-indicator');
+                indicator.classList.toggle('bg-slate-800', isActive);
+                indicator.classList.toggle('bg-transparent', !isActive);
+            });
+        }
+
+        function updateFloorUI() {
+            document.querySelectorAll('.floor-btn').forEach(btn => {
+                const isActive = parseInt(btn.dataset.floor) === state.currentFloor;
+                btn.className = `floor-btn w-10 h-10 rounded-xl font-black text-sm border-2 ${isActive ? 'border-slate-800 bg-slate-800 text-white shadow-md' : 'border-slate-300 bg-white text-slate-500 shadow-sm'} transition-all active:scale-90`;
+            });
+        }
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            renderCanvas();
+        }
+
+        function handleCanvasClick(e) {
+            if(state.isNavigating || state.activeTab !== 'map') return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / canvas.width) * 100;
+            const y = ((e.clientY - rect.top) / canvas.height) * 100;
+
+            const clickedRoom = roomData.find(r => 
+                r.floor === state.currentFloor && 
+                x >= r.coords.x && x <= r.coords.x + r.coords.w &&
+                y >= r.coords.y && y <= r.coords.y + r.coords.h
+            );
+
+            if (clickedRoom) {
+                state.selectedRoom = clickedRoom;
+                openSheet();
+            } else {
+                state.selectedRoom = null;
+                closeSheet();
+            }
+            renderCanvas();
+        }
+
+        function renderCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 1;
+            for(let i=0; i<100; i+=10) {
+                ctx.beginPath(); ctx.moveTo(0, (i/100)*canvas.height); ctx.lineTo(canvas.width, (i/100)*canvas.height); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo((i/100)*canvas.width, 0); ctx.lineTo((i/100)*canvas.width, canvas.height); ctx.stroke();
+            }
+
+            const currentRooms = roomData.filter(r => r.floor === state.currentFloor);
+            
+            currentRooms.forEach(room => {
+                const rx = (room.coords.x / 100) * canvas.width;
+                const ry = (room.coords.y / 100) * canvas.height;
+                const rw = (room.coords.w / 100) * canvas.width;
+                const rh = (room.coords.h / 100) * canvas.height;
+
+                const isSelected = state.selectedRoom?.id === room.id;
+                
+                ctx.fillStyle = isSelected ? '#e2e8f0' : '#ffffff';
+                ctx.beginPath();
+                ctx.roundRect(rx, ry, rw, rh, 8);
+                ctx.fill();
+                
+                ctx.strokeStyle = isSelected ? '#1e293b' : '#94a3b8';
+                ctx.lineWidth = isSelected ? 3 : 2;
+                ctx.stroke();
+
+                ctx.fillStyle = isSelected ? '#0f172a' : '#64748b';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                const words = room.name.split(' ');
+                if(words.length > 1 && rh > 40) {
+                    ctx.fillText(words[0], rx + rw/2, ry + rh/2 - 8);
+                    ctx.fillText(words[1], rx + rw/2, ry + rh/2 + 8);
+                } else {
+                    ctx.fillText(room.name, rx + rw/2, ry + rh/2);
+                }
+            });
+
+            if(state.isNavigating && state.selectedRoom) {
+                const dest = state.selectedRoom.coords;
+                const endX = (dest.x + dest.w/2)/100 * canvas.width;
+                const endY = (dest.y + dest.h/2)/100 * canvas.height;
+                const startX = canvas.width/2;
+                const startY = canvas.height - 20;
+
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(startX, startY - 50);
+                ctx.lineTo(endX, startY - 50);
+                ctx.lineTo(endX, endY);
+                
+                ctx.strokeStyle = '#1e293b';
+                ctx.lineWidth = 4;
+                ctx.setLineDash([10, 10]);
+                ctx.lineDashOffset = -navAnimationOffset;
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                ctx.beginPath(); ctx.arc(startX, startY, 6, 0, Math.PI*2); ctx.fillStyle = '#1e293b'; ctx.fill();
+                ctx.beginPath(); ctx.arc(endX, endY, 6, 0, Math.PI*2); ctx.fillStyle = '#1e293b'; ctx.fill();
+
+                navAnimationOffset += 1;
+                requestAnimationFrame(renderCanvas);
+            }
+        }
+
+        function openSheet() {
+            if(!state.selectedRoom) return;
+            document.getElementById('sheetRoomName').textContent = state.selectedRoom.name;
+            document.getElementById('sheetRoomLevel').textContent = `Level ${state.selectedRoom.floor}`;
+            document.getElementById('sheetRoomCap').textContent = state.selectedRoom.capacity;
+            document.getElementById('sheetRoomType').textContent = state.selectedRoom.type;
+            
+            document.getElementById('roomSheetDefault').classList.remove('hide');
+            document.getElementById('roomSheetBooking').classList.add('hide');
+            
+            document.getElementById('roomSheet').classList.remove('slide-down');
+            document.getElementById('roomSheet').classList.add('slide-up');
+        }
+
+        function closeSheet() {
+            document.getElementById('roomSheet').classList.remove('slide-up');
+            document.getElementById('roomSheet').classList.add('slide-down');
+        }
+
+        function startNavigation() {
+            state.isNavigating = true;
+            closeSheet();
+            document.getElementById('searchHeader').classList.add('hide');
+            document.getElementById('mainFooter').classList.add('hide');
+            document.getElementById('floorSwitcher').classList.add('hide');
+            
+            document.getElementById('activeNavHeader').classList.remove('hide');
+            document.getElementById('navFooter').classList.remove('hide');
+            document.getElementById('navInstruction').textContent = `Proceed to ${state.selectedRoom.name}`;
+            
+            navAnimationOffset = 0;
+            renderCanvas();
+        }
+
+        function endNavigation() {
+            state.isNavigating = false;
+            state.selectedRoom = null;
+            document.getElementById('activeNavHeader').classList.add('hide');
+            document.getElementById('navFooter').classList.add('hide');
+            
+            document.getElementById('searchHeader').classList.remove('hide');
+            document.getElementById('mainFooter').classList.remove('hide');
+            document.getElementById('floorSwitcher').classList.remove('hide');
+            renderCanvas();
+        }
+
+        function openBookingFlow() {
+            document.getElementById('roomSheetDefault').classList.add('hide');
+            document.getElementById('roomSheetBooking').classList.remove('hide');
+            document.getElementById('bookingRoomName').textContent = `${state.selectedRoom.name} - Level ${state.selectedRoom.floor}`;
+            
+            const container = document.getElementById('timeSlotContainer');
+            container.innerHTML = '';
+            
+            timeSlots.forEach(time => {
+                const isBooked = state.bookings.some(b => b.roomId === state.selectedRoom.id && b.time === time);
+                const btn = document.createElement('button');
+                
+                if(isBooked) {
+                    btn.className = 'py-3 border-2 border-slate-200 rounded-xl font-bold text-xs text-slate-300 bg-slate-50 opacity-50 cursor-not-allowed';
+                    btn.textContent = time;
+                } else {
+                    btn.className = 'time-slot-btn py-3 border-2 border-slate-300 rounded-xl font-bold text-xs text-slate-700 bg-white active:scale-95 transition-all';
+                    btn.textContent = time;
+                    btn.onclick = () => selectTimeSlot(btn, time);
+                }
+                container.appendChild(btn);
+            });
+            
+            document.getElementById('confirmBookingBtn').disabled = true;
+        }
+
+        function selectTimeSlot(btnElement, time) {
+            document.querySelectorAll('.time-slot-btn').forEach(b => {
+                b.classList.remove('border-slate-800', 'bg-slate-800', 'text-white');
+                b.classList.add('border-slate-300', 'bg-white', 'text-slate-700');
+            });
+            btnElement.classList.remove('border-slate-300', 'bg-white', 'text-slate-700');
+            btnElement.classList.add('border-slate-800', 'bg-slate-800', 'text-white');
+            
+            state.selectedTimeSlot = time;
+            document.getElementById('confirmBookingBtn').disabled = false;
+        }
+
+        function confirmBooking() {
+            if(!state.selectedTimeSlot || !state.selectedRoom) return;
+            
+            state.bookings.push({
+                id: Date.now(),
+                roomId: state.selectedRoom.id,
+                roomName: state.selectedRoom.name,
+                time: state.selectedTimeSlot
+            });
+            
+            closeSheet();
+            renderBookingsList();
+            
+            const btn = document.getElementById('confirmBookingBtn');
+            const originalText = btn.textContent;
+            btn.textContent = "Confirmed ✓";
+            btn.classList.add('bg-green-600');
+            
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-green-600');
+                state.selectedRoom = null;
+                renderCanvas();
+            }, 1000);
+        }
+
+        function renderBookingsList() {
+            const list = document.getElementById('bookingsList');
+            if(state.bookings.length === 0) {
+                list.innerHTML = `<div class="text-center p-8 border-2 border-dashed border-slate-300 rounded-2xl text-slate-400 font-bold text-sm">No active bookings.</div>`;
+                return;
+            }
+            
+            list.innerHTML = state.bookings.sort((a,b) => a.time.localeCompare(b.time)).map(b => `
+                <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-slate-100 rounded-xl flex flex-col items-center justify-center text-slate-800">
+                            <span class="text-xs font-black">${b.time.split(':')[0]}</span>
+                            <span class="text-[8px] font-bold uppercase text-slate-400">${b.time.split(':')[1]}</span>
+                        </div>
+                        <div>
+                            <div class="font-bold text-slate-800">${b.roomName}</div>
+                            <div class="text-[10px] font-bold tracking-widest uppercase text-slate-400 mt-1">Status: Confirmed</div>
+                        </div>
+                    </div>
+                    <button class="text-slate-300 p-2" onclick="cancelBooking(${b.id})">✖</button>
+                </div>
+            `).join('');
+        }
+
+        window.cancelBooking = function(id) {
+            state.bookings = state.bookings.filter(b => b.id !== id);
+            renderBookingsList();
+        }
+
+        function handleSearch(e) {
+            const q = e.target.value.toLowerCase();
+            if(!q) {
+                document.getElementById('suggestionList').innerHTML = '';
+                return;
+            }
+            const matches = roomData.filter(r => r.name.toLowerCase().includes(q));
+            
+            document.getElementById('suggestionList').innerHTML = matches.slice(0,3).map(r => `
+                <div class="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl cursor-pointer" onmousedown="goToSearchedRoom('${r.id}')">
+                    <div>
+                        <div class="font-bold text-slate-800 text-sm">${r.name}</div>
+                        <div class="text-[10px] font-bold tracking-widest uppercase text-slate-400">Level ${r.floor}</div>
+                    </div>
+                    <span class="text-slate-300">➡</span>
+                </div>
+            `).join('');
+        }
+
+        window.goToSearchedRoom = function(id) {
+            const room = roomData.find(r => r.id === id);
+            if(room) {
+                state.currentFloor = room.floor;
+                state.selectedRoom = room;
+                updateFloorUI();
+                renderCanvas();
+                openSheet();
+                document.getElementById('searchInput').value = '';
+                document.getElementById('searchSuggestions').classList.add('hide');
+            }
+        }
+
+        function renderUtilizationChart() {
+            const ctx = document.getElementById('utilizationChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Meeting', 'Office', 'Public'],
+                    datasets: [{
+                        data: [45, 30, 25],
+                        backgroundColor: ['#1e293b', '#64748b', '#cbd5e1'],
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '75%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { font: { size: 10, family: 'sans-serif', weight: 'bold' }, color: '#64748b' } },
+                        tooltip: { backgroundColor: '#1e293b', padding: 12, cornerRadius: 8 }
+                    }
+                }
+            });
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

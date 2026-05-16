@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Campus Planner v1 Harness</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { overscroll-behavior-y: none; background-color: #f1f5f9; }
+        .chart-container { position: relative; width: 100%; height: 100%; overflow: hidden; }
+        .slide-up { transform: translateY(0%); }
+        .slide-down { transform: translateY(110%); }
+        .hide { display: none !important; }
+        
+        /* Checkered pattern to mock background cadastral image */
+        .bg-pattern {
+            background-image: linear-gradient(45deg, #e2e8f0 25%, transparent 25%), 
+                              linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #e2e8f0 75%), 
+                              linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen text-slate-800 font-sans">
+
+    <!-- Application Structure Plan: Built to mirror the V1 Harness requirements. 
+         - The core is a custom Canvas engine that handles a root Footprint Polygon and axis-aligned Rectangles (Rooms).
+         - Z-index layering is used to pop up the booking/editing forms over the map.
+         - Contains two primary modes: 'Viewer' (for scheduling) and 'Admin' (for geometry editing).
+    -->
+
+    <div class="w-full max-w-md h-[100dvh] sm:h-[90vh] bg-slate-50 relative overflow-hidden flex flex-col shadow-2xl sm:rounded-[2.5rem] border-4 border-slate-800">
+        
+        <!-- Header -->
+        <div class="p-4 z-20 bg-white border-b border-slate-200 flex justify-between items-center shrink-0">
+            <div>
+                <h1 class="font-black text-slate-900 tracking-tight text-lg leading-none">Campus Planner</h1>
+                <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">V1 Harness</span>
+            </div>
+            <!-- Role Toggle -->
+            <div class="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                <button id="modeUserBtn" class="px-3 py-1 text-xs font-bold rounded-md bg-slate-800 text-white transition-all">User</button>
+                <button id="modeAdminBtn" class="px-3 py-1 text-xs font-bold rounded-md text-slate-500 hover:text-slate-800 transition-all">Admin</button>
+            </div>
+        </div>
+
+        <!-- Admin Toolbar (Hidden in User Mode) -->
+        <div id="adminToolbar" class="hide bg-amber-50 border-b border-amber-200 p-3 flex gap-2 z-10 shrink-0">
+            <button id="addRoomBtn" class="flex-1 bg-white border-2 border-amber-300 text-amber-700 font-bold text-xs py-2 rounded-lg active:bg-amber-100 transition-colors">
+                + Add Room
+            </button>
+            <button id="saveMapBtn" class="flex-1 bg-amber-600 text-white font-bold text-xs py-2 rounded-lg active:bg-amber-700 transition-colors">
+                Save GeoJSON
+            </button>
+        </div>
+
+        <!-- Map Viewport -->
+        <div class="flex-1 relative bg-white overflow-hidden z-0">
+            <!-- Simulated background image container -->
+            <div class="absolute inset-0 bg-pattern opacity-50 pointer-events-none"></div>
+            
+            <div class="chart-container">
+                <canvas id="mapCanvas" class="absolute inset-0 w-full h-full touch-none"></canvas>
+            </div>
+            
+            <!-- Contextual Toast -->
+            <div id="toast" class="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg transition-opacity duration-300 opacity-0 pointer-events-none z-10">
+                Message
+            </div>
+        </div>
+
+        <!-- BOTTOM SHEET: Scheduling / Room Info -->
+        <div id="roomSheet" class="absolute bottom-0 inset-x-0 bg-white border-t border-slate-200 rounded-t-[2rem] p-6 transition-transform duration-300 slide-down z-30 shadow-[0_-20px_50px_rgba(0,0,0,0.15)] flex flex-col max-h-[85vh]">
+            <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-4 shrink-0"></div>
+            
+            <!-- Sheet Header -->
+            <div class="flex justify-between items-start mb-6 shrink-0">
+                <div>
+                    <h2 id="sheetRoomName" class="text-2xl font-black text-slate-800 tracking-tight">Room Name</h2>
+                    <p class="text-xs font-bold text-slate-400">Capacity: 10 • Valid Geometry</p>
+                </div>
+                <button id="closeSheetBtn" class="w-8 h-8 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-bold active:bg-slate-200">✖</button>
+            </div>
+
+            <!-- Scrollable Content -->
+            <div class="flex-1 overflow-y-auto min-h-0">
+                <!-- User Mode: Booking -->
+                <div id="userBookingFlow">
+                    <h3 class="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-3">1-Hour Time Slots</h3>
+                    <div class="grid grid-cols-3 gap-2 mb-6" id="timeSlotContainer">
+                        <!-- Slots generated by JS -->
+                    </div>
+
+                    <div id="bookingDetailsForm" class="hide space-y-4 border-t border-slate-100 pt-4">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-1">Meeting Title</label>
+                            <input type="text" id="meetTitle" placeholder="e.g. Q3 Sync" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm font-bold focus:outline-none focus:border-slate-800">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-1">Description</label>
+                            <textarea id="meetDesc" rows="2" placeholder="Agenda..." class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:border-slate-800"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-1">Participants</label>
+                            <div class="relative" id="multiSelectContainer">
+                                <button type="button" id="multiSelectTrigger" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-left flex justify-between items-center focus:outline-none focus:border-slate-800 transition-colors">
+                                    <span id="multiSelectLabel" class="truncate text-slate-400">Select participants...</span>
+                                    <span class="text-slate-400 text-xs">▼</span>
+                                </button>
+                                <div id="multiSelectDropdown" class="hide absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto">
+                                    <label class="flex items-center px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm text-slate-700">
+                                        <input type="checkbox" value="user_1" data-name="Alice (Admin)" class="mr-2 participant-cb accent-slate-800"> Alice (Admin)
+                                    </label>
+                                    <label class="flex items-center px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm text-slate-700">
+                                        <input type="checkbox" value="user_2" data-name="Bob (Engineering)" class="mr-2 participant-cb accent-slate-800"> Bob (Engineering)
+                                    </label>
+                                    <label class="flex items-center px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm text-slate-700">
+                                        <input type="checkbox" value="user_3" data-name="Charlie (Design)" class="mr-2 participant-cb accent-slate-800"> Charlie (Design)
+                                    </label>
+                                    <label class="flex items-center px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm text-slate-700">
+                                        <input type="checkbox" value="user_4" data-name="Dave (HR)" class="mr-2 participant-cb accent-slate-800"> Dave (HR)
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="confirmBookingBtn" class="w-full py-4 mt-2 bg-slate-800 text-white rounded-xl font-black text-sm active:scale-95 transition-transform shadow-md">
+                            Confirm Booking
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Admin Mode: Editing Properties -->
+                <div id="adminEditFlow" class="hide space-y-4">
+                    <div class="bg-amber-50 text-amber-800 text-xs p-3 rounded-lg border border-amber-200 font-bold mb-4">
+                        Editor active. Drag the room on the map to move it, or drag the corners to resize. Must remain inside the footprint.
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-1">Room Name</label>
+                        <input type="text" id="editRoomName" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                    </div>
+                    <button id="updateRoomPropsBtn" class="w-full py-3 bg-amber-500 text-white rounded-xl font-black text-sm active:bg-amber-600 transition-colors">
+                        Update Attributes
+                    </button>
+                    <button id="deleteRoomBtn" class="w-full py-3 bg-white border border-red-200 text-red-600 rounded-xl font-black text-sm active:bg-red-50 transition-colors">
+                        Delete Room
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Core Data Models based on V1 Harness ---
+        const state = {
+            mode: 'user', // 'user' | 'admin'
+            selectedRoomId: null,
+            interaction: null, // 'dragging_room', 'resizing_tl', 'resizing_tr', 'resizing_bl', 'resizing_br', null
+            dragStart: { x: 0, y: 0 },
+            originalRoomRect: null,
+            selectedTimeSlot: null,
+            
+            // Map Metadata
+            map: {
+                id: 'map_v1',
+                name: 'Floor 1',
+                timezone: 'Europe/Bucharest',
+                // Footprint Polygon defined as percentages [0-100] of the canvas
+                // L-shape representing the building bounds
+                footprint: [
+                    {x: 10, y: 10},
+                    {x: 90, y: 10},
+                    {x: 90, y: 40},
+                    {x: 50, y: 40},
+                    {x: 50, y: 90},
+                    {x: 10, y: 90}
+                ]
+            },
+            
+            // Rooms are defined by x, y, width, height (percentages)
+            rooms: [
+                { id: 'r1', name: 'Conference A', x: 15, y: 15, w: 25, h: 20 },
+                { id: 'r2', name: 'Office 101', x: 45, y: 15, w: 15, h: 20 },
+                { id: 'r3', name: 'Break Room', x: 15, y: 45, w: 30, h: 30 }
+            ],
+
+            // Meetings
+            meetings: []
+        };
+
+        const HOURS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+        const HANDLE_SIZE = 12;
+
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Geometry Utilities ---
+
+        // Point in Polygon algorithm (Ray-casting)
+        function isPointInPolygon(point, vs) {
+            let x = point.x, y = point.y;
+            let inside = false;
+            for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+                let xi = vs[i].x, yi = vs[i].y;
+                let xj = vs[j].x, yj = vs[j].y;
+                let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        // Check if all 4 corners of an axis-aligned rectangle are inside the polygon
+        function isRoomValid(room) {
+            const corners = [
+                { x: room.x, y: room.y },
+                { x: room.x + room.w, y: room.y },
+                { x: room.x, y: room.y + room.h },
+                { x: room.x + room.w, y: room.y + room.h }
+            ];
+            return corners.every(c => isPointInPolygon(c, state.map.footprint));
+        }
+
+        // Helper to convert % to pixels
+        function toPx(pct, isWidth) {
+            return (pct / 100) * (isWidth ? canvas.width : canvas.height);
+        }
+        // Helper to convert pixels to %
+        function toPct(px, isWidth) {
+            return (px / (isWidth ? canvas.width : canvas.height)) * 100;
+        }
+
+        // --- Rendering Engine ---
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            render();
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Draw Footprint Boundary
+            ctx.beginPath();
+            state.map.footprint.forEach((pt, i) => {
+                const px = toPx(pt.x, true);
+                const py = toPx(pt.y, false);
+                if(i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            });
+            ctx.closePath();
+            
+            // Mask the background pattern outside footprint by drawing a solid fill around it
+            // (For simplicity in this mockup, we just draw the footprint outline)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; // Light fill over the pattern
+            ctx.fill();
+            ctx.strokeStyle = '#94a3b8'; // Slate 400
+            ctx.lineWidth = 3;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 2. Draw Rooms
+            state.rooms.forEach(room => {
+                const rx = toPx(room.x, true);
+                const ry = toPx(room.y, false);
+                const rw = toPx(room.w, true);
+                const rh = toPx(room.h, false);
+
+                const isSelected = state.selectedRoomId === room.id;
+                const valid = isRoomValid(room);
+
+                // Styling logic based on state
+                ctx.beginPath();
+                ctx.rect(rx, ry, rw, rh);
+                
+                if (state.mode === 'admin') {
+                    if (!valid) {
+                        ctx.fillStyle = 'rgba(239, 68, 68, 0.2)'; // Red invalid
+                        ctx.strokeStyle = '#ef4444'; 
+                    } else if (isSelected) {
+                        ctx.fillStyle = 'rgba(245, 158, 11, 0.2)'; // Amber selected
+                        ctx.strokeStyle = '#f59e0b';
+                    } else {
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                        ctx.strokeStyle = '#475569';
+                    }
+                } else {
+                    ctx.fillStyle = isSelected ? '#e2e8f0' : '#ffffff';
+                    ctx.strokeStyle = isSelected ? '#1e293b' : '#64748b';
+                }
+
+                ctx.fill();
+                ctx.lineWidth = isSelected ? 3 : 2;
+                ctx.stroke();
+
+                // Room Label
+                ctx.fillStyle = (!valid && state.mode === 'admin') ? '#ef4444' : '#1e293b';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(room.name, rx + rw/2, ry + rh/2);
+
+                // 3. Draw Resize Handles if Admin & Selected
+                if (state.mode === 'admin' && isSelected) {
+                    ctx.fillStyle = '#f59e0b'; // Amber
+                    const hs = HANDLE_SIZE;
+                    const hhs = hs/2;
+                    ctx.fillRect(rx - hhs, ry - hhs, hs, hs); // TL
+                    ctx.fillRect(rx + rw - hhs, ry - hhs, hs, hs); // TR
+                    ctx.fillRect(rx - hhs, ry + rh - hhs, hs, hs); // BL
+                    ctx.fillRect(rx + rw - hhs, ry + rh - hhs, hs, hs); // BR
+                }
+            });
+        }
+
+        // --- Canvas Interaction Engine ---
+
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            // Handle touch or mouse
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: toPct(clientX - rect.left, true),
+                y: toPct(clientY - rect.top, false)
+            };
+        }
+
+        function checkHandleHover(pctPos, room) {
+            const hx = toPct(HANDLE_SIZE, true);
+            const hy = toPct(HANDLE_SIZE, false);
+            
+            // Increase hit area slightly for touch
+            const buffer = 2; 
+
+            if (Math.abs(pctPos.x - room.x) < hx+buffer && Math.abs(pctPos.y - room.y) < hy+buffer) return 'resizing_tl';
+            if (Math.abs(pctPos.x - (room.x + room.w)) < hx+buffer && Math.abs(pctPos.y - room.y) < hy+buffer) return 'resizing_tr';
+            if (Math.abs(pctPos.x - room.x) < hx+buffer && Math.abs(pctPos.y - (room.y + room.h)) < hy+buffer) return 'resizing_bl';
+            if (Math.abs(pctPos.x - (room.x + room.w)) < hx+buffer && Math.abs(pctPos.y - (room.y + room.h)) < hy+buffer) return 'resizing_br';
+            
+            return null;
+        }
+
+        function handlePointerDown(e) {
+            const pos = getMousePos(e);
+            let clickedRoom = null;
+            let clickedHandle = null;
+
+            // Check handles first if in admin mode and a room is selected
+            if (state.mode === 'admin' && state.selectedRoomId) {
+                const selRoom = state.rooms.find(r => r.id === state.selectedRoomId);
+                clickedHandle = checkHandleHover(pos, selRoom);
+                if (clickedHandle) {
+                    clickedRoom = selRoom;
+                    state.interaction = clickedHandle;
+                }
+            }
+
+            // Check room bodies (reverse to click top-most)
+            if (!clickedHandle) {
+                for (let i = state.rooms.length - 1; i >= 0; i--) {
+                    const r = state.rooms[i];
+                    if (pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h) {
+                        clickedRoom = r;
+                        state.interaction = state.mode === 'admin' ? 'dragging_room' : null;
+                        break;
+                    }
+                }
+            }
+
+            if (clickedRoom) {
+                state.selectedRoomId = clickedRoom.id;
+                state.dragStart = { x: pos.x, y: pos.y };
+                state.originalRoomRect = { ...clickedRoom };
+                openSheet();
+            } else {
+                state.selectedRoomId = null;
+                state.interaction = null;
+                closeSheet();
+            }
+            render();
+        }
+
+        function handlePointerMove(e) {
+            if (!state.interaction || !state.selectedRoomId) return;
+            e.preventDefault(); // Prevent scroll while dragging
+
+            const pos = getMousePos(e);
+            const dx = pos.x - state.dragStart.x;
+            const dy = pos.y - state.dragStart.y;
+            const room = state.rooms.find(r => r.id === state.selectedRoomId);
+            const orig = state.originalRoomRect;
+
+            if (state.interaction === 'dragging_room') {
+                room.x = orig.x + dx;
+                room.y = orig.y + dy;
+            } else if (state.interaction === 'resizing_br') {
+                room.w = Math.max(5, orig.w + dx);
+                room.h = Math.max(5, orig.h + dy);
+            } else if (state.interaction === 'resizing_tl') {
+                room.x = Math.min(orig.x + orig.w - 5, orig.x + dx);
+                room.y = Math.min(orig.y + orig.h - 5, orig.y + dy);
+                room.w = Math.max(5, orig.w - dx);
+                room.h = Math.max(5, orig.h - dy);
+            } else if (state.interaction === 'resizing_tr') {
+                room.y = Math.min(orig.y + orig.h - 5, orig.y + dy);
+                room.w = Math.max(5, orig.w + dx);
+                room.h = Math.max(5, orig.h - dy);
+            } else if (state.interaction === 'resizing_bl') {
+                room.x = Math.min(orig.x + orig.w - 5, orig.x + dx);
+                room.w = Math.max(5, orig.w - dx);
+                room.h = Math.max(5, orig.h + dy);
+            }
+            render();
+        }
+
+        function handlePointerUp() {
+            if (state.interaction && state.selectedRoomId) {
+                const room = state.rooms.find(r => r.id === state.selectedRoomId);
+                if (!isRoomValid(room)) {
+                    showToast("Room outside footprint bounds!");
+                    // Revert to original on drop if invalid
+                    Object.assign(room, state.originalRoomRect);
+                    render();
+                }
+            }
+            state.interaction = null;
+        }
+
+        // --- Application Logic & UI Bindings ---
+
+        function init() {
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // Pointer events for Unified Mouse/Touch
+            canvas.addEventListener('pointerdown', handlePointerDown);
+            window.addEventListener('pointermove', handlePointerMove);
+            window.addEventListener('pointerup', handlePointerUp);
+
+            // Mode Toggles
+            document.getElementById('modeUserBtn').addEventListener('click', () => setMode('user'));
+            document.getElementById('modeAdminBtn').addEventListener('click', () => setMode('admin'));
+
+            // Admin Tools
+            document.getElementById('addRoomBtn').addEventListener('click', addRoom);
+            document.getElementById('saveMapBtn').addEventListener('click', saveMapGeoJSON);
+            
+            // Sheet Actions
+            document.getElementById('closeSheetBtn').addEventListener('click', () => {
+                state.selectedRoomId = null;
+                closeSheet();
+                render();
+            });
+
+            // Booking Form
+            document.getElementById('confirmBookingBtn').addEventListener('click', confirmBooking);
+
+            // Edit Form
+            document.getElementById('updateRoomPropsBtn').addEventListener('click', () => {
+                const room = state.rooms.find(r => r.id === state.selectedRoomId);
+                room.name = document.getElementById('editRoomName').value;
+                document.getElementById('sheetRoomName').textContent = room.name;
+                showToast("Updated!");
+                render();
+            });
+            document.getElementById('deleteRoomBtn').addEventListener('click', () => {
+                state.rooms = state.rooms.filter(r => r.id !== state.selectedRoomId);
+                state.selectedRoomId = null;
+                closeSheet();
+                render();
+                showToast("Room deleted");
+            });
+
+            // Multi-select Dropdown Logic
+            const multiSelectTrigger = document.getElementById('multiSelectTrigger');
+            const multiSelectDropdown = document.getElementById('multiSelectDropdown');
+            const participantCbs = document.querySelectorAll('.participant-cb');
+
+            multiSelectTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                multiSelectDropdown.classList.toggle('hide');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!document.getElementById('multiSelectContainer').contains(e.target)) {
+                    multiSelectDropdown.classList.add('hide');
+                }
+            });
+
+            participantCbs.forEach(cb => {
+                cb.addEventListener('change', updateMultiSelectLabel);
+            });
+
+            render();
+        }
+
+        function updateMultiSelectLabel() {
+            const multiSelectLabel = document.getElementById('multiSelectLabel');
+            const selected = Array.from(document.querySelectorAll('.participant-cb:checked')).map(cb => cb.dataset.name);
+            if (selected.length === 0) {
+                multiSelectLabel.textContent = 'Select participants...';
+                multiSelectLabel.classList.add('text-slate-400');
+                multiSelectLabel.classList.remove('text-slate-800', 'font-bold');
+            } else {
+                multiSelectLabel.textContent = selected.join(', ');
+                multiSelectLabel.classList.remove('text-slate-400');
+                multiSelectLabel.classList.add('text-slate-800', 'font-bold');
+            }
+        }
+
+        function setMode(newMode) {
+            state.mode = newMode;
+            state.selectedRoomId = null;
+            closeSheet();
+            
+            const btnU = document.getElementById('modeUserBtn');
+            const btnA = document.getElementById('modeAdminBtn');
+            const tool = document.getElementById('adminToolbar');
+
+            if (newMode === 'user') {
+                btnU.className = 'px-3 py-1 text-xs font-bold rounded-md bg-slate-800 text-white transition-all';
+                btnA.className = 'px-3 py-1 text-xs font-bold rounded-md text-slate-500 hover:text-slate-800 transition-all';
+                tool.classList.add('hide');
+            } else {
+                btnA.className = 'px-3 py-1 text-xs font-bold rounded-md bg-slate-800 text-white transition-all';
+                btnU.className = 'px-3 py-1 text-xs font-bold rounded-md text-slate-500 hover:text-slate-800 transition-all';
+                tool.classList.remove('hide');
+            }
+            render();
+        }
+
+        function addRoom() {
+            const newRoom = {
+                id: 'r_' + Date.now(),
+                name: 'New Room',
+                x: 20, y: 20, w: 15, h: 15
+            };
+            state.rooms.push(newRoom);
+            state.selectedRoomId = newRoom.id;
+            setMode('admin'); // Ensure admin
+            openSheet();
+            render();
+        }
+
+        // Converts our abstract % rects into a GeoJSON Polygon representation
+        function saveMapGeoJSON() {
+            // Check validity
+            const invalid = state.rooms.find(r => !isRoomValid(r));
+            if (invalid) {
+                showToast("Error: Some rooms are outside bounds.");
+                return;
+            }
+
+            const geoJsonFeatures = state.rooms.map(r => ({
+                type: "Feature",
+                properties: { id: r.id, name: r.name },
+                geometry: {
+                    type: "Polygon",
+                    coordinates: [[
+                        [r.x, r.y],
+                        [r.x + r.w, r.y],
+                        [r.x + r.w, r.y + r.h],
+                        [r.x, r.y + r.h],
+                        [r.x, r.y] // Close ring
+                    ]]
+                }
+            }));
+
+            const output = {
+                type: "FeatureCollection",
+                mapId: state.map.id,
+                footprint: state.map.footprint,
+                features: geoJsonFeatures
+            };
+
+            console.log("Saved GeoJSON payload:", output);
+            showToast("Saved to console!");
+        }
+
+        function openSheet() {
+            const room = state.rooms.find(r => r.id === state.selectedRoomId);
+            if (!room) return;
+
+            document.getElementById('sheetRoomName').textContent = room.name;
+            
+            // Toggle Content based on Mode
+            const userFlow = document.getElementById('userBookingFlow');
+            const adminFlow = document.getElementById('adminEditFlow');
+
+            if (state.mode === 'user') {
+                userFlow.classList.remove('hide');
+                adminFlow.classList.add('hide');
+                buildTimeSlots(room);
+                document.getElementById('bookingDetailsForm').classList.add('hide');
+            } else {
+                userFlow.classList.add('hide');
+                adminFlow.classList.remove('hide');
+                document.getElementById('editRoomName').value = room.name;
+            }
+
+            document.getElementById('roomSheet').classList.remove('slide-down');
+            document.getElementById('roomSheet').classList.add('slide-up');
+        }
+
+        function closeSheet() {
+            document.getElementById('roomSheet').classList.remove('slide-up');
+            document.getElementById('roomSheet').classList.add('slide-down');
+            state.selectedTimeSlot = null;
+        }
+
+        function buildTimeSlots(room) {
+            const container = document.getElementById('timeSlotContainer');
+            container.innerHTML = '';
+            
+            HOURS.forEach(time => {
+                const isBooked = state.meetings.some(m => m.roomId === room.id && m.hour === time);
+                const btn = document.createElement('button');
+                
+                if(isBooked) {
+                    btn.className = 'py-3 border-2 border-slate-200 rounded-xl font-bold text-xs text-slate-300 bg-slate-50 opacity-50 cursor-not-allowed';
+                    btn.textContent = time;
+                } else {
+                    btn.className = 'time-slot-btn py-3 border-2 border-slate-300 rounded-xl font-bold text-xs text-slate-700 bg-white active:scale-95 transition-all';
+                    btn.textContent = time;
+                    btn.onclick = () => selectTimeSlot(btn, time);
+                }
+                container.appendChild(btn);
+            });
+        }
+
+        function selectTimeSlot(btnElement, time) {
+            document.querySelectorAll('.time-slot-btn').forEach(b => {
+                b.classList.remove('border-slate-800', 'bg-slate-800', 'text-white');
+                b.classList.add('border-slate-300', 'bg-white', 'text-slate-700');
+            });
+            btnElement.classList.remove('border-slate-300', 'bg-white', 'text-slate-700');
+            btnElement.classList.add('border-slate-800', 'bg-slate-800', 'text-white');
+            
+            state.selectedTimeSlot = time;
+            document.getElementById('bookingDetailsForm').classList.remove('hide');
+        }
+
+        function confirmBooking() {
+            const title = document.getElementById('meetTitle').value;
+            const desc = document.getElementById('meetDesc').value;
+            const users = Array.from(document.querySelectorAll('.participant-cb:checked')).map(cb => cb.value);
+
+            if(!title) {
+                showToast("Title is required");
+                return;
+            }
+
+            state.meetings.push({
+                id: Date.now(),
+                roomId: state.selectedRoomId,
+                hour: state.selectedTimeSlot,
+                title, desc, users
+            });
+
+            showToast(`Meeting booked for ${state.selectedTimeSlot}`);
+            
+            // Reset form
+            document.getElementById('meetTitle').value = '';
+            document.getElementById('meetDesc').value = '';
+            document.querySelectorAll('.participant-cb').forEach(cb => cb.checked = false);
+            updateMultiSelectLabel();
+            
+            closeSheet();
+            state.selectedRoomId = null;
+            render();
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.remove('opacity-0');
+            setTimeout(() => t.classList.add('opacity-0'), 2500);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
