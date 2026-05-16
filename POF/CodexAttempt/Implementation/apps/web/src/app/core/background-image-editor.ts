@@ -1,10 +1,24 @@
-import { type BoundingBox, type NormalizedRectangle, type ProcessBackgroundImageRequest } from '@campus/contracts';
+import {
+  type BoundingBox,
+  type NormalizedRectangle,
+  type ProcessBackgroundImageRequest,
+} from '@campus/contracts';
 
 export interface EditorRectangle {
   x: number;
   y: number;
   width: number;
   height: number;
+}
+
+export type CanvasMode = 'rooms' | 'image' | 'crop';
+
+export interface BackgroundImageEditDraft {
+  scale: number;
+  rotationQuarterTurns: number;
+  offsetX: number;
+  offsetY: number;
+  cropRect: EditorRectangle;
 }
 
 const MIN_SCALE = 0.25;
@@ -69,7 +83,10 @@ export function quarterTurnsToDegrees(rotationQuarterTurns: number): number {
   return normalized * 90;
 }
 
-export function toNormalizedRectangle(bounds: BoundingBox, rectangle: EditorRectangle): NormalizedRectangle {
+export function toNormalizedRectangle(
+  bounds: BoundingBox,
+  rectangle: EditorRectangle,
+): NormalizedRectangle {
   return {
     x: bounds.width > 0 ? (rectangle.x - bounds.minX) / bounds.width : 0,
     y: bounds.height > 0 ? (rectangle.y - bounds.minY) / bounds.height : 0,
