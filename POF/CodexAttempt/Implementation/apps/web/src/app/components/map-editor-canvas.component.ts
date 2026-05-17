@@ -3,10 +3,18 @@ import { Component, ElementRef, HostListener, ViewChild, input, output } from '@
 import {
   EditorRoomModel,
   GeoJsonPolygon,
+  GeoJsonPosition,
+  createPolygon,
+  createRectanglePolygon,
   getBoundingBox,
+  getProjectedBoundingBox,
   polygonContainsPolygon,
-  polygonToPointsAttribute,
+  polygonToRoomModel,
+  projectedPolygonToPointsAttribute,
+  projectGeoJsonPolygon,
   roomModelToPolygon,
+  unprojectGeoJsonPolygon,
+  unprojectGeoJsonPosition,
 } from '@campus/contracts';
 
 import {
@@ -126,15 +134,12 @@ type InteractionState =
 
         @for (room of rooms(); track room.id) {
           <g>
-            <rect
+            <polygon
               class="room-shape"
               [class.invalid]="!isRoomValid(room)"
               [class.selected]="selectedRoomId() === room.id"
               [class.inactive]="canvasMode() !== 'rooms'"
-              [attr.x]="room.x"
-              [attr.y]="room.y"
-              [attr.width]="room.width"
-              [attr.height]="room.height"
+              [attr.points]="pointsForRoom(room)"
               [attr.fill]="room.color"
               [style.pointer-events]="canvasMode() === 'rooms' ? 'auto' : 'none'"
               fill-opacity="0.35"
@@ -142,19 +147,46 @@ type InteractionState =
               (pointerdown)="startRoomInteraction($event, room, 'drag')"
               (click)="selectedRoomIdChange.emit(room.id)"
             />
-            <text class="room-label" [attr.x]="room.x + 6" [attr.y]="room.y + 18">
+            <text class="room-label" [attr.x]="roomLabelX(room)" [attr.y]="roomLabelY(room)">
               {{ room.name }}
             </text>
-            <circle
-              class="resize-handle"
-              [class.inactive]="canvasMode() !== 'rooms'"
-              [style.pointer-events]="canvasMode() === 'rooms' ? 'auto' : 'none'"
-              [attr.cx]="room.x + room.width"
-              [attr.cy]="room.y + room.height"
-              r="4"
-              (pointerdown)="startRoomInteraction($event, room, 'resize')"
-            />
+            @if (room.shape === 'rectangle') {
+              <circle
+                class="resize-handle"
+                [class.inactive]="canvasMode() !== 'rooms'"
+                [style.pointer-events]="canvasMode() === 'rooms' ? 'auto' : 'none'"
+                [attr.cx]="roomResizeHandleX(room)"
+                [attr.cy]="roomResizeHandleY(room)"
+                r="4"
+                (pointerdown)="startRoomInteraction($event, room, 'resize')"
+              />
+            }
           </g>
+        }
+
+        @if (polygonDrawing() && canvasMode() === 'rooms') {
+          <rect
+            class="polygon-click-layer"
+            [attr.x]="bounds().minX"
+            [attr.y]="bounds().minY"
+            [attr.width]="bounds().width"
+            [attr.height]="bounds().height"
+            (pointerdown)="addPolygonPoint($event)"
+          />
+          @if (polygonDraftPoints().length > 0) {
+            <polyline class="polygon-draft-line" [attr.points]="draftPointsAttribute()" />
+          }
+          @for (point of polygonDraftPoints(); track $index) {
+            <circle
+              class="polygon-draft-point"
+              [class.first]="!!$first"
+              [attr.cx]="point[0]"
+              [attr.cy]="point[1]"
+              r="6"
+              (pointerdown)="onDraftPointPointerDown($event)"
+              (dblclick)="completePolygon($event, $first)"
+            />
+          }
         }
 
         @if (backgroundUrl() && canvasMode() === 'crop') {
@@ -269,6 +301,31 @@ type InteractionState =
       cursor: nwse-resize;
     }
 
+    .polygon-click-layer {
+      fill: transparent;
+      cursor: crosshair;
+    }
+
+    .polygon-draft-line {
+      fill: none;
+      stroke: #0f172a;
+      stroke-width: 2;
+      stroke-dasharray: 8 5;
+      pointer-events: none;
+    }
+
+    .polygon-draft-point {
+      fill: white;
+      stroke: #0f172a;
+      stroke-width: 2;
+      cursor: crosshair;
+    }
+
+    .polygon-draft-point.first {
+      fill: #99f6e4;
+      cursor: pointer;
+    }
+
     .crop-mask {
       fill: rgba(15, 23, 42, 0.3);
       pointer-events: none;
@@ -302,17 +359,21 @@ export class MapEditorCanvasComponent {
   readonly canvasMode = input.required<CanvasMode>();
   readonly backgroundUrl = input<string | null>(null);
   readonly backgroundDraft = input.required<BackgroundImageEditDraft>();
+  readonly polygonDrawing = input(false);
+  readonly polygonDraftPoints = input<GeoJsonPosition[]>([]);
 
   readonly roomsChange = output<EditorRoomModel[]>();
   readonly selectedRoomIdChange = output<string | null>();
   readonly backgroundDraftChange = output<BackgroundImageEditDraft>();
+  readonly polygonDraftPointsChange = output<GeoJsonPosition[]>();
+  readonly polygonRoomCreated = output<GeoJsonPolygon>();
 
   private interaction: InteractionState | null = null;
 
   protected bounds() {
     const polygon = this.footprint();
     return polygon
-      ? getBoundingBox(polygon)
+      ? getProjectedBoundingBox(polygon)
       : { minX: 0, minY: 0, maxX: 100, maxY: 100, width: 100, height: 100 };
   }
 
@@ -325,7 +386,30 @@ export class MapEditorCanvasComponent {
 
   protected footprintPoints(): string {
     const polygon = this.footprint();
-    return polygon ? polygonToPointsAttribute(polygon) : '';
+    return polygon ? projectedPolygonToPointsAttribute(polygon) : '';
+  }
+
+  protected pointsForRoom(room: EditorRoomModel): string {
+    return projectedPolygonToPointsAttribute(roomModelToPolygon(room));
+  }
+
+  protected roomLabelX(room: EditorRoomModel): number {
+    return getProjectedBoundingBox(roomModelToPolygon(room)).minX + 6;
+  }
+
+  protected roomLabelY(room: EditorRoomModel): number {
+    const box = getProjectedBoundingBox(roomModelToPolygon(room));
+    return box.minY + Math.min(Math.max(box.height * 0.3, 14), 22);
+  }
+
+  protected roomResizeHandleX(room: EditorRoomModel): number {
+    const box = getProjectedBoundingBox(roomModelToPolygon(room));
+    return box.maxX;
+  }
+
+  protected roomResizeHandleY(room: EditorRoomModel): number {
+    const box = getProjectedBoundingBox(roomModelToPolygon(room));
+    return box.maxY;
   }
 
   protected backgroundImageRect(): EditorRectangle {
@@ -367,6 +451,10 @@ export class MapEditorCanvasComponent {
   protected isRoomValid(room: EditorRoomModel): boolean {
     const polygon = this.footprint();
     return polygon ? polygonContainsPolygon(polygon, roomModelToPolygon(room)) : false;
+  }
+
+  protected draftPointsAttribute(): string {
+    return projectedPolygonToPointsAttribute(createPolygon(this.polygonDraftPoints()));
   }
 
   protected startRoomInteraction(
@@ -415,6 +503,39 @@ export class MapEditorCanvasComponent {
       initialOffsetX: draft.offsetX,
       initialOffsetY: draft.offsetY,
     };
+  }
+
+  protected addPolygonPoint(event: PointerEvent): void {
+    if (!this.canAddPolygonPoint()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const point = this.toSvgPoint(event);
+    if (!point) {
+      return;
+    }
+
+    this.polygonDraftPointsChange.emit([
+      ...this.polygonDraftPoints(),
+      unprojectGeoJsonPosition([point.x, point.y]),
+    ]);
+  }
+
+  protected onDraftPointPointerDown(event: PointerEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  protected completePolygon(event: MouseEvent, isFirstPoint: boolean): void {
+    if (!isFirstPoint || this.polygonDraftPoints().length < 3) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.polygonRoomCreated.emit(createPolygon(this.polygonDraftPoints()));
   }
 
   protected startCropMove(event: PointerEvent): void {
@@ -481,18 +602,38 @@ export class MapEditorCanvasComponent {
           }
 
           if (interaction.mode === 'drag') {
+            const geometryGeoJson = translatePolygon(
+              roomModelToPolygon(interaction.initial),
+              deltaX,
+              deltaY,
+            );
+            const bounds = getBoundingBox(geometryGeoJson);
             return {
               ...room,
-              x: interaction.initial.x + deltaX,
-              y: interaction.initial.y + deltaY,
+              x: bounds.minX,
+              y: bounds.minY,
+              width: bounds.width,
+              height: bounds.height,
+              geometryGeoJson,
             };
           }
 
-          return {
-            ...room,
-            width: Math.max(20, interaction.initial.width + deltaX),
-            height: Math.max(20, interaction.initial.height + deltaY),
-          };
+          const initialBounds = getProjectedBoundingBox(roomModelToPolygon(interaction.initial));
+          const geometryGeoJson = unprojectGeoJsonPolygon(
+            createRectanglePolygon(
+              initialBounds.minX,
+              initialBounds.minY,
+              Math.max(20, initialBounds.width + deltaX),
+              Math.max(20, initialBounds.height + deltaY),
+            ),
+          );
+
+          return polygonToRoomModel(geometryGeoJson, {
+            id: room.id,
+            name: room.name,
+            color: room.color,
+            sortOrder: room.sortOrder,
+          });
         }),
       );
       return;
@@ -528,6 +669,20 @@ export class MapEditorCanvasComponent {
   @HostListener('document:pointerup')
   protected onPointerUp(): void {
     this.interaction = null;
+  }
+
+  @HostListener('document:keydown.escape', ['$event'])
+  protected onEscape(event: Event): void {
+    if (!this.polygonDrawing() || this.polygonDraftPoints().length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    this.polygonDraftPointsChange.emit([]);
+  }
+
+  private canAddPolygonPoint(): boolean {
+    return this.canvasMode() === 'rooms' && this.polygonDrawing() && !!this.footprint();
   }
 
   private updateBackgroundDraft(patch: Partial<BackgroundImageEditDraft>): void {
@@ -588,4 +743,13 @@ export class MapEditorCanvasComponent {
     const transformed = point.matrixTransform(matrix.inverse());
     return { x: transformed.x, y: transformed.y };
   }
+}
+
+function translatePolygon(polygon: GeoJsonPolygon, deltaX: number, deltaY: number): GeoJsonPolygon {
+  return unprojectGeoJsonPolygon({
+    ...polygon,
+    coordinates: projectGeoJsonPolygon(polygon).coordinates.map((ring) =>
+      ring.map((point) => [point[0] + deltaX, point[1] + deltaY] as GeoJsonPosition),
+    ),
+  });
 }

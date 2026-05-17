@@ -1,4 +1,9 @@
-import { getBoundingBox, polygonToPointsAttribute, type MapDto, type RoomDto } from '@campus/contracts';
+import {
+  getProjectedBoundingBox,
+  projectedPolygonToPointsAttribute,
+  type MapDto,
+  type RoomDto,
+} from '@campus/contracts';
 
 import { assetUrl } from './api';
 
@@ -34,9 +39,14 @@ export interface MapCollectionSvgExportOptions {
   includeLabels?: boolean;
 }
 
-export async function downloadMapSvg(map: ExportableMap, options: MapSvgExportOptions = {}): Promise<void> {
+export async function downloadMapSvg(
+  map: ExportableMap,
+  options: MapSvgExportOptions = {},
+): Promise<void> {
   const svgMarkup = await buildMapSvg(map, options);
-  const downloadUrl = URL.createObjectURL(new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' }));
+  const downloadUrl = URL.createObjectURL(
+    new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' }),
+  );
   const anchor = document.createElement('a');
   anchor.href = downloadUrl;
   anchor.download = buildMapSvgFileName(map);
@@ -47,10 +57,15 @@ export async function downloadMapSvg(map: ExportableMap, options: MapSvgExportOp
   setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
 }
 
-export async function buildMapSvg(map: ExportableMap, options: MapSvgExportOptions = {}): Promise<string> {
+export async function buildMapSvg(
+  map: ExportableMap,
+  options: MapSvgExportOptions = {},
+): Promise<string> {
   const viewport = getMapViewport(map);
   const rooms = [...map.rooms].sort((left, right) => left.sortOrder - right.sortOrder);
-  const backgroundHref = await resolveBackgroundHref(options.backgroundHref ?? map.backgroundImageUrl);
+  const backgroundHref = await resolveBackgroundHref(
+    options.backgroundHref ?? map.backgroundImageUrl,
+  );
   const includeLabels = options.includeLabels ?? true;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -79,7 +94,9 @@ export async function downloadMapCollectionSvg(
   options: MapCollectionSvgExportOptions = {},
 ): Promise<void> {
   const svgMarkup = await buildMapCollectionSvg(collection, options);
-  const downloadUrl = URL.createObjectURL(new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' }));
+  const downloadUrl = URL.createObjectURL(
+    new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' }),
+  );
   const anchor = document.createElement('a');
   anchor.href = downloadUrl;
   anchor.download = buildMapCollectionSvgFileName(collection);
@@ -99,7 +116,8 @@ export async function buildMapCollectionSvg(
     exportId: map.id?.trim() || `map-${index + 1}`,
   }));
   const includeLabels = options.includeLabels ?? true;
-  const activeMapId = maps.find((map) => map.exportId === options.activeMapId)?.exportId ?? maps[0]?.exportId ?? '';
+  const activeMapId =
+    maps.find((map) => map.exportId === options.activeMapId)?.exportId ?? maps[0]?.exportId ?? '';
   const resolvedMaps = await Promise.all(
     maps.map(async (map) => ({
       ...map,
@@ -182,7 +200,10 @@ export async function buildMapCollectionSvg(
     <text class="sidebar-copy" x="0" y="24">Standalone SVG with built-in map switching.</text>
     ${resolvedMaps
       .map(
-        (map, index) => `<g class="map-button${map.exportId === activeMapId ? ' active' : ''}" data-map-id="${escapeAttribute(map.exportId)}" transform="translate(0 ${56 + index * 76})">
+        (
+          map,
+          index,
+        ) => `<g class="map-button${map.exportId === activeMapId ? ' active' : ''}" data-map-id="${escapeAttribute(map.exportId)}" transform="translate(0 ${56 + index * 76})">
       <rect x="0" y="0" width="${sidebarWidth - 48}" height="60" rx="16" ry="16" />
       <text x="18" y="26" font-size="16" font-weight="700">${escapeText(map.name)}</text>
       <text class="button-floor" x="18" y="44">${escapeText(map.floorLabel)}</text>
@@ -234,7 +255,7 @@ function buildMapCollectionSvgFileName(collection: ExportableMapCollection): str
 }
 
 function getMapViewport(map: ExportableMap) {
-  const bounds = getBoundingBox(map.footprintGeoJson);
+  const bounds = getProjectedBoundingBox(map.footprintGeoJson);
   const padX = Math.max(bounds.width * 0.08, 24);
   const padY = Math.max(bounds.height * 0.08, 24);
 
@@ -260,7 +281,7 @@ function buildMapScene(
 ): string {
   return `<defs>
     <clipPath id="${escapeAttribute(options.clipPathId)}">
-      <polygon points="${escapeAttribute(polygonToPointsAttribute(map.footprintGeoJson))}" />
+      <polygon points="${escapeAttribute(projectedPolygonToPointsAttribute(map.footprintGeoJson))}" />
     </clipPath>
   </defs>
   <rect x="${options.viewport.minX}" y="${options.viewport.minY}" width="${options.viewport.width}" height="${options.viewport.height}" fill="url(#${escapeAttribute(options.gridPatternId)})" />
@@ -271,16 +292,16 @@ function buildMapScene(
     </g>`
       : ''
   }
-  <polygon points="${escapeAttribute(polygonToPointsAttribute(map.footprintGeoJson))}" fill="#115e59" fill-opacity="0.08" stroke="#115e59" stroke-width="2.5" />
+  <polygon points="${escapeAttribute(projectedPolygonToPointsAttribute(map.footprintGeoJson))}" fill="#115e59" fill-opacity="0.08" stroke="#115e59" stroke-width="2.5" />
   ${options.rooms
     .map((room) => {
-      const roomBounds = getBoundingBox(room.geometryGeoJson);
+      const roomBounds = getProjectedBoundingBox(room.geometryGeoJson);
       const label = options.includeLabels
         ? `<text x="${roomBounds.minX + 6}" y="${roomBounds.minY + Math.min(Math.max(roomBounds.height * 0.3, 14), 22)}" fill="#0f172a" font-family="'Space Grotesk', sans-serif" font-size="12">${escapeText(room.name)}</text>`
         : '';
 
       return `<g>
-    <polygon points="${escapeAttribute(polygonToPointsAttribute(room.geometryGeoJson))}" fill="${escapeAttribute(room.color)}" fill-opacity="0.35" stroke="#1f2a33" stroke-opacity="0.65" stroke-width="2" />
+    <polygon points="${escapeAttribute(projectedPolygonToPointsAttribute(room.geometryGeoJson))}" fill="${escapeAttribute(room.color)}" fill-opacity="0.35" stroke="#1f2a33" stroke-opacity="0.65" stroke-width="2" />
     ${label}
   </g>`;
     })
@@ -333,10 +354,7 @@ function slugify(value: string): string {
 }
 
 function escapeText(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
 function escapeAttribute(value: string): string {

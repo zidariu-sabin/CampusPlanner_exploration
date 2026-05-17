@@ -2,7 +2,14 @@ import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DateTime } from 'luxon';
-import { GeoJsonPolygon, MapDto, MeetingDto, UserSummaryDto, getBoundingBox, polygonToPointsAttribute } from '@campus/contracts';
+import {
+  GeoJsonPolygon,
+  MapDto,
+  MeetingDto,
+  UserSummaryDto,
+  getProjectedBoundingBox,
+  projectedPolygonToPointsAttribute,
+} from '@campus/contracts';
 
 import { assetUrl } from '../core/api';
 import { AuthService } from '../core/auth.service';
@@ -47,7 +54,9 @@ import { UsersService } from '../core/users.service';
             </div>
             <div class="actions">
               <span class="chip">{{ meetings().length }} meetings on {{ selectedDate }}</span>
-              <button type="button" class="ghost" (click)="exportSvg()" [disabled]="!map()">Export SVG</button>
+              <button type="button" class="ghost" (click)="exportSvg()" [disabled]="!map()">
+                Export SVG
+              </button>
             </div>
           </div>
 
@@ -136,7 +145,9 @@ import { UsersService } from '../core/users.service';
           </div>
 
           <div class="actions">
-            <button type="button" (click)="createMeeting()" [disabled]="!map()">Book hour slot</button>
+            <button type="button" (click)="createMeeting()" [disabled]="!map()">
+              Book hour slot
+            </button>
             <span class="muted">Booked hours for this room: {{ bookedHoursLabel() }}</span>
           </div>
         </article>
@@ -155,11 +166,15 @@ import { UsersService } from '../core/users.service';
               <div class="section-header">
                 <div>
                   <strong>{{ meeting.title }}</strong>
-                  <p class="muted">{{ roomName(meeting.roomId) }} · {{ hourLabel(meeting.hour) }}</p>
+                  <p class="muted">
+                    {{ roomName(meeting.roomId) }} · {{ hourLabel(meeting.hour) }}
+                  </p>
                 </div>
                 <div class="actions">
                   @if (canDelete(meeting)) {
-                    <button type="button" class="danger" (click)="deleteMeeting(meeting.id)">Cancel</button>
+                    <button type="button" class="danger" (click)="deleteMeeting(meeting.id)">
+                      Cancel
+                    </button>
                   }
                 </div>
               </div>
@@ -310,11 +325,11 @@ export class MapBookingFormComponent implements OnInit {
   }
 
   protected footprintPoints(): string {
-    return this.map() ? polygonToPointsAttribute(this.map()!.footprintGeoJson) : '';
+    return this.map() ? projectedPolygonToPointsAttribute(this.map()!.footprintGeoJson) : '';
   }
 
   protected pointsForRoom(polygon: GeoJsonPolygon): string {
-    return polygonToPointsAttribute(polygon);
+    return projectedPolygonToPointsAttribute(polygon);
   }
 
   protected backgroundUrl(): string | null {
@@ -423,7 +438,10 @@ export class MapBookingFormComponent implements OnInit {
     }
 
     try {
-      const [map, users] = await Promise.all([this.mapsService.get(mapId), this.usersService.list()]);
+      const [map, users] = await Promise.all([
+        this.mapsService.get(mapId),
+        this.usersService.list(),
+      ]);
       this.map.set(map);
       this.users.set(users);
       this.selectedRoomId = map.rooms[0]?.id ?? '';
@@ -438,7 +456,7 @@ export class MapBookingFormComponent implements OnInit {
   }
 
   private boundingBox(polygon: GeoJsonPolygon) {
-    return getBoundingBox(polygon);
+    return getProjectedBoundingBox(polygon);
   }
 
   private extractMessage(error: unknown): string {
@@ -447,7 +465,7 @@ export class MapBookingFormComponent implements OnInit {
     }
 
     if (typeof error === 'object' && error && 'error' in error) {
-      return ((error as { error?: { message?: string } }).error?.message) ?? 'Request failed.';
+      return (error as { error?: { message?: string } }).error?.message ?? 'Request failed.';
     }
     return 'Request failed.';
   }

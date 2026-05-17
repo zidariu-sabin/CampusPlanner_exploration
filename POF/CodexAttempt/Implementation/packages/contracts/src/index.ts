@@ -1,7 +1,11 @@
 export type Role = 'admin' | 'user';
 export type BackgroundFitMode = 'contain';
 
+// GeoJSON positions follow EPSG:4326 order: [longitude, latitude].
 export type GeoJsonPosition = [number, number];
+
+const WEB_MERCATOR_RADIUS_METERS = 6378137;
+const MAX_WEB_MERCATOR_LATITUDE = 85.05112878;
 
 export interface GeoJsonPolygon {
   type: 'Polygon';
@@ -110,15 +114,19 @@ export interface CreateMeetingRequest {
 
 export interface UpdateMeetingRequest extends CreateMeetingRequest {}
 
+export type EditorRoomShape = 'rectangle' | 'polygon';
+
 export interface EditorRoomModel {
   id: string;
   name: string;
   color: string;
+  shape: EditorRoomShape;
   x: number;
   y: number;
   width: number;
   height: number;
   sortOrder: number;
+  geometryGeoJson: GeoJsonPolygon;
 }
 
 export interface BoundingBox {
@@ -151,18 +159,47 @@ export function createPolygon(points: GeoJsonPosition[]): GeoJsonPolygon {
   };
 }
 
-export function createRectanglePolygon(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-): GeoJsonPolygon {
+export function createRectanglePolygon(x: number, y: number, width: number, height: number): GeoJsonPolygon {
   return createPolygon([
     [x, y],
     [x + width, y],
     [x + width, y + height],
     [x, y + height],
   ]);
+}
+
+export function projectGeoJsonPosition(position: GeoJsonPosition): GeoJsonPosition {
+  const [longitude, latitude] = position;
+  const clampedLatitude = Math.min(Math.max(latitude, -MAX_WEB_MERCATOR_LATITUDE), MAX_WEB_MERCATOR_LATITUDE);
+  const x = WEB_MERCATOR_RADIUS_METERS * degreesToRadians(longitude);
+  const mercatorY =
+    WEB_MERCATOR_RADIUS_METERS * Math.log(Math.tan(Math.PI / 4 + degreesToRadians(clampedLatitude) / 2));
+
+  return [x, -mercatorY];
+}
+
+export function unprojectGeoJsonPosition(position: GeoJsonPosition): GeoJsonPosition {
+  const [x, y] = position;
+  const longitude = radiansToDegrees(x / WEB_MERCATOR_RADIUS_METERS);
+  const latitude = radiansToDegrees(Math.atan(Math.sinh(-y / WEB_MERCATOR_RADIUS_METERS)));
+
+  return [longitude, latitude];
+}
+
+export function projectGeoJsonPolygon(polygon: GeoJsonPolygon): GeoJsonPolygon {
+  return transformPolygonPositions(polygon, projectGeoJsonPosition);
+}
+
+export function unprojectGeoJsonPolygon(polygon: GeoJsonPolygon): GeoJsonPolygon {
+  return transformPolygonPositions(polygon, unprojectGeoJsonPosition);
+}
+
+export function getProjectedBoundingBox(polygon: GeoJsonPolygon): BoundingBox {
+  return getBoundingBox(projectGeoJsonPolygon(polygon));
+}
+
+export function projectedPolygonToPointsAttribute(polygon: GeoJsonPolygon): string {
+  return polygonToPointsAttribute(projectGeoJsonPolygon(polygon));
 }
 
 export function getOuterRing(polygon: GeoJsonPolygon): GeoJsonPosition[] {
@@ -223,9 +260,7 @@ export function isPointInPolygon(point: GeoJsonPosition, polygon: GeoJsonPolygon
 
     const intersects =
       current[1] > point[1] !== prior[1] > point[1] &&
-      point[0] <
-        ((prior[0] - current[0]) * (point[1] - current[1])) / (prior[1] - current[1] || 1e-12) +
-          current[0];
+      point[0] < ((prior[0] - current[0]) * (point[1] - current[1])) / (prior[1] - current[1] || 1e-12) + current[0];
 
     if (intersects) {
       inside = !inside;
@@ -297,7 +332,14 @@ export function polygonContainsPolygon(container: GeoJsonPolygon, candidate: Geo
   return true;
 }
 
-export function roomModelToPolygon(room: Pick<EditorRoomModel, 'x' | 'y' | 'width' | 'height'>): GeoJsonPolygon {
+export function roomModelToPolygon(
+  room: Pick<EditorRoomModel, 'x' | 'y' | 'width' | 'height'> &
+    Partial<Pick<EditorRoomModel, 'shape' | 'geometryGeoJson'>>,
+): GeoJsonPolygon {
+  if (room.shape === 'polygon' && room.geometryGeoJson) {
+    return room.geometryGeoJson;
+  }
+
   return createRectanglePolygon(room.x, room.y, room.width, room.height);
 }
 
@@ -306,11 +348,50 @@ export function polygonToRoomModel(
   base: Pick<EditorRoomModel, 'id' | 'name' | 'color' | 'sortOrder'>,
 ): EditorRoomModel {
   const box = getBoundingBox(polygon);
+  const shape: EditorRoomShape = isAxisAlignedRectangle(polygon, box) ? 'rectangle' : 'polygon';
+
   return {
     ...base,
+    shape,
     x: box.minX,
     y: box.minY,
     width: box.width,
     height: box.height,
+    geometryGeoJson:
+      shape === 'rectangle' ? createRectanglePolygon(box.minX, box.minY, box.width, box.height) : polygon,
   };
+}
+
+function isAxisAlignedRectangle(polygon: GeoJsonPolygon, box: BoundingBox): boolean {
+  const ring = getOuterRing(polygon);
+  if (ring.length !== 5) {
+    return false;
+  }
+
+  const expected = closeRing([
+    [box.minX, box.minY],
+    [box.maxX, box.minY],
+    [box.maxX, box.maxY],
+    [box.minX, box.maxY],
+  ]);
+
+  return ring.every((point, index) => point[0] === expected[index][0] && point[1] === expected[index][1]);
+}
+
+function transformPolygonPositions(
+  polygon: GeoJsonPolygon,
+  transform: (position: GeoJsonPosition) => GeoJsonPosition,
+): GeoJsonPolygon {
+  return {
+    ...polygon,
+    coordinates: polygon.coordinates.map((ring) => ring.map(transform)),
+  };
+}
+
+function degreesToRadians(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+function radiansToDegrees(value: number): number {
+  return (value * 180) / Math.PI;
 }

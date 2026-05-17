@@ -1,5 +1,11 @@
 import { Component, input, output } from '@angular/core';
-import { GeoJsonPolygon, MapDto, RoomDto, getBoundingBox, polygonToPointsAttribute } from '@campus/contracts';
+import {
+  GeoJsonPolygon,
+  MapDto,
+  RoomDto,
+  getProjectedBoundingBox,
+  projectedPolygonToPointsAttribute,
+} from '@campus/contracts';
 
 import { assetUrl } from '../core/api';
 
@@ -9,7 +15,9 @@ import { assetUrl } from '../core/api';
   template: `
     <div class="map-preview-frame">
       @if (showExportAction()) {
-        <button type="button" class="ghost export-button" (click)="requestExport($event)">Export SVG</button>
+        <button type="button" class="ghost export-button" (click)="requestExport($event)">
+          Export SVG
+        </button>
       }
 
       <svg class="map-preview-svg" [class.compact]="compact()" [attr.viewBox]="viewBox()">
@@ -67,8 +75,7 @@ import { assetUrl } from '../core/api';
       border-radius: 22px;
       background:
         linear-gradient(90deg, rgba(31, 42, 51, 0.04) 1px, transparent 1px),
-        linear-gradient(rgba(31, 42, 51, 0.04) 1px, transparent 1px),
-        white;
+        linear-gradient(rgba(31, 42, 51, 0.04) 1px, transparent 1px), white;
       background-size: 20px 20px;
       box-shadow: inset 0 0 0 1px rgba(31, 42, 51, 0.08);
     }
@@ -92,7 +99,10 @@ import { assetUrl } from '../core/api';
 
     .room-shape {
       stroke: rgba(31, 42, 51, 0.65);
-      transition: stroke 120ms ease, stroke-width 120ms ease, fill-opacity 120ms ease;
+      transition:
+        stroke 120ms ease,
+        stroke-width 120ms ease,
+        fill-opacity 120ms ease;
     }
 
     .room-shape.selected {
@@ -121,7 +131,7 @@ export class MapPreviewComponent {
   readonly exportRequested = output<void>();
 
   protected bounds() {
-    return getBoundingBox(this.map().footprintGeoJson);
+    return getProjectedBoundingBox(this.map().footprintGeoJson);
   }
 
   protected viewBox(): string {
@@ -132,11 +142,11 @@ export class MapPreviewComponent {
   }
 
   protected footprintPoints(): string {
-    return polygonToPointsAttribute(this.map().footprintGeoJson);
+    return projectedPolygonToPointsAttribute(this.map().footprintGeoJson);
   }
 
   protected pointsForRoom(polygon: GeoJsonPolygon): string {
-    return polygonToPointsAttribute(polygon);
+    return projectedPolygonToPointsAttribute(polygon);
   }
 
   protected backgroundUrl(): string | null {
@@ -144,11 +154,11 @@ export class MapPreviewComponent {
   }
 
   protected roomLabelX(room: RoomDto): number {
-    return getBoundingBox(room.geometryGeoJson).minX + 6;
+    return getProjectedBoundingBox(room.geometryGeoJson).minX + 6;
   }
 
   protected roomLabelY(room: RoomDto): number {
-    const box = getBoundingBox(room.geometryGeoJson);
+    const box = getProjectedBoundingBox(room.geometryGeoJson);
     return box.minY + Math.min(Math.max(box.height * 0.3, 14), 22);
   }
 

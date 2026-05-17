@@ -5,14 +5,18 @@ import { Router, RouterLink } from '@angular/router';
 import {
   EditableRoomInput,
   EditorRoomModel,
+  EditorRoomShape,
   GeoJsonPolygon,
+  GeoJsonPosition,
   MapDto,
   MapSummaryDto,
   createPolygon,
-  getBoundingBox,
+  createRectanglePolygon,
+  getProjectedBoundingBox,
   polygonContainsPolygon,
   polygonToRoomModel,
   roomModelToPolygon,
+  unprojectGeoJsonPolygon,
 } from '@campus/contracts';
 
 import {
@@ -112,8 +116,28 @@ import { MapEditorCanvasComponent } from './map-editor-canvas.component';
           <div class="canvas-header">
             <h2>Editor canvas</h2>
             <div class="actions">
+              <div class="segmented" aria-label="Room shape">
+                <button
+                  type="button"
+                  class="ghost"
+                  [class.active]="roomShape() === 'rectangle'"
+                  (click)="setRoomShape('rectangle')"
+                >
+                  Square
+                </button>
+                <button
+                  type="button"
+                  class="ghost"
+                  [class.active]="roomShape() === 'polygon'"
+                  (click)="setRoomShape('polygon')"
+                >
+                  Polygon
+                </button>
+              </div>
               <button type="button" class="ghost" (click)="exportSvg()">Export SVG</button>
-              <button type="button" class="ghost" (click)="addRoom()">Add room</button>
+              <button type="button" class="ghost" (click)="addRoom()">
+                {{ roomShape() === 'polygon' ? 'Start polygon' : 'Add square' }}
+              </button>
               @if (selectedRoom()) {
                 <button type="button" class="danger" (click)="removeSelectedRoom()">
                   Delete room
@@ -131,9 +155,13 @@ import { MapEditorCanvasComponent } from './map-editor-canvas.component';
             [canvasMode]="canvasMode()"
             [backgroundUrl]="backgroundUrl()"
             [backgroundDraft]="backgroundDraft()"
+            [polygonDrawing]="polygonDrawing()"
+            [polygonDraftPoints]="polygonDraftPoints()"
             (roomsChange)="rooms.set($event)"
             (selectedRoomIdChange)="selectedRoomId.set($event)"
             (backgroundDraftChange)="backgroundDraft.set($event)"
+            (polygonDraftPointsChange)="polygonDraftPoints.set($event)"
+            (polygonRoomCreated)="addPolygonRoom($event)"
           />
         </article>
       </section>
@@ -143,7 +171,7 @@ import { MapEditorCanvasComponent } from './map-editor-canvas.component';
           <div class="section-header">
             <div>
               <h2>Rooms</h2>
-              <p class="muted">Name, color, and adjust rectangles directly on the canvas.</p>
+              <p class="muted">Name, color, and adjust room geometry directly on the canvas.</p>
             </div>
             <span class="chip">{{ rooms().length }} rooms</span>
           </div>
@@ -161,10 +189,40 @@ import { MapEditorCanvasComponent } from './map-editor-canvas.component';
                 <div class="grid-2 compact">
                   <label>Name <input [(ngModel)]="room.name" /></label>
                   <label>Color <input [(ngModel)]="room.color" /></label>
-                  <label>X <input type="number" [(ngModel)]="room.x" /></label>
-                  <label>Y <input type="number" [(ngModel)]="room.y" /></label>
-                  <label>Width <input type="number" min="1" [(ngModel)]="room.width" /></label>
-                  <label>Height <input type="number" min="1" [(ngModel)]="room.height" /></label>
+                  <label>
+                    X
+                    <input
+                      type="number"
+                      [(ngModel)]="room.x"
+                      [disabled]="room.shape === 'polygon'"
+                    />
+                  </label>
+                  <label>
+                    Y
+                    <input
+                      type="number"
+                      [(ngModel)]="room.y"
+                      [disabled]="room.shape === 'polygon'"
+                    />
+                  </label>
+                  <label>
+                    Width
+                    <input
+                      type="number"
+                      min="1"
+                      [(ngModel)]="room.width"
+                      [disabled]="room.shape === 'polygon'"
+                    />
+                  </label>
+                  <label>
+                    Height
+                    <input
+                      type="number"
+                      min="1"
+                      [(ngModel)]="room.height"
+                      [disabled]="room.shape === 'polygon'"
+                    />
+                  </label>
                 </div>
               </div>
             }
@@ -241,6 +299,18 @@ import { MapEditorCanvasComponent } from './map-editor-canvas.component';
       flex-wrap: wrap;
     }
 
+    .segmented {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .segmented .active {
+      background: rgba(14, 116, 144, 0.1);
+      border-color: rgba(14, 116, 144, 0.35);
+      color: var(--ink);
+    }
+
     .room-list {
       display: grid;
       gap: 0.85rem;
@@ -301,6 +371,9 @@ export class MapEditorFormComponent implements OnInit {
   protected readonly message = signal('');
   protected readonly canvasMode = signal<CanvasMode>('rooms');
   protected readonly processingBackground = signal(false);
+  protected readonly roomShape = signal<EditorRoomShape>('rectangle');
+  protected readonly polygonDrawing = signal(false);
+  protected readonly polygonDraftPoints = signal<GeoJsonPosition[]>([]);
 
   @Input({ alias: 'mapId' })
   set editorMapId(value: string | null | undefined) {
@@ -314,10 +387,10 @@ export class MapEditorFormComponent implements OnInit {
   protected timezone = 'Europe/Bucharest';
   protected footprintText = JSON.stringify(
     createPolygon([
-      [0, 0],
-      [560, 0],
-      [560, 360],
-      [0, 360],
+      [23.8295, 44.298],
+      [23.8306, 44.298],
+      [23.8306, 44.2972],
+      [23.8295, 44.2972],
     ]),
     null,
     2,
@@ -376,12 +449,12 @@ export class MapEditorFormComponent implements OnInit {
   protected loadSampleFootprint(): void {
     this.footprintText = JSON.stringify(
       createPolygon([
-        [0, 0],
-        [640, 0],
-        [640, 180],
-        [540, 180],
-        [540, 420],
-        [0, 420],
+        [23.8292, 44.2982],
+        [23.831, 44.2982],
+        [23.831, 44.2978],
+        [23.8307, 44.2978],
+        [23.8307, 44.2971],
+        [23.8292, 44.2971],
       ]),
       null,
       2,
@@ -423,7 +496,7 @@ export class MapEditorFormComponent implements OnInit {
   protected bounds() {
     const polygon = this.parsedFootprint();
     return polygon
-      ? getBoundingBox(polygon)
+      ? getProjectedBoundingBox(polygon)
       : { minX: 0, minY: 0, maxX: 100, maxY: 100, width: 100, height: 100 };
   }
 
@@ -461,6 +534,10 @@ export class MapEditorFormComponent implements OnInit {
   }
 
   protected canvasModeHint(): string {
+    if (this.polygonDrawing() && this.canvasMode() === 'rooms') {
+      return 'Click the canvas to add polygon points. Double-click the first point to close the room, or press Escape to reset the points.';
+    }
+
     if (!this.canUseImageTools()) {
       return 'Upload a background image to unlock image alignment tools.';
     }
@@ -492,6 +569,14 @@ export class MapEditorFormComponent implements OnInit {
     });
   }
 
+  protected setRoomShape(shape: EditorRoomShape): void {
+    this.roomShape.set(shape);
+    if (shape === 'rectangle') {
+      this.polygonDrawing.set(false);
+      this.polygonDraftPoints.set([]);
+    }
+  }
+
   protected selectedRoom(): EditorRoomModel | null {
     return this.rooms().find((room) => room.id === this.selectedRoomId()) ?? null;
   }
@@ -511,6 +596,14 @@ export class MapEditorFormComponent implements OnInit {
   }
 
   protected addRoom(): void {
+    if (this.roomShape() === 'polygon') {
+      this.canvasMode.set('rooms');
+      this.polygonDraftPoints.set([]);
+      this.polygonDrawing.set(true);
+      this.selectedRoomId.set(null);
+      return;
+    }
+
     const box = this.bounds();
     const index = this.rooms().length;
     const stepX = Math.max(box.width * 0.06, 28);
@@ -519,19 +612,34 @@ export class MapEditorFormComponent implements OnInit {
     const height = Math.max(box.height * 0.14, 48);
     const maxX = Math.max(box.minX + 12, box.maxX - width - 12);
     const maxY = Math.max(box.minY + 12, box.maxY - height - 12);
-    const room: EditorRoomModel = {
-      id: crypto.randomUUID(),
-      name: `Room ${this.rooms().length + 1}`,
-      color: '#38bdf8',
-      x: Math.min(box.minX + box.width * 0.1 + stepX * index, maxX),
-      y: Math.min(box.minY + box.height * 0.1 + stepY * index, maxY),
-      width,
-      height,
-      sortOrder: this.rooms().length,
-    };
+    const x = Math.min(box.minX + box.width * 0.1 + stepX * index, maxX);
+    const y = Math.min(box.minY + box.height * 0.1 + stepY * index, maxY);
+    const room = polygonToRoomModel(
+      unprojectGeoJsonPolygon(createRectanglePolygon(x, y, width, height)),
+      {
+        id: crypto.randomUUID(),
+        name: `Room ${this.rooms().length + 1}`,
+        color: '#38bdf8',
+        sortOrder: this.rooms().length,
+      },
+    );
 
     this.rooms.update((rooms) => [...rooms, room]);
     this.selectedRoomId.set(room.id);
+  }
+
+  protected addPolygonRoom(polygon: GeoJsonPolygon): void {
+    const room = polygonToRoomModel(polygon, {
+      id: crypto.randomUUID(),
+      name: `Room ${this.rooms().length + 1}`,
+      color: '#38bdf8',
+      sortOrder: this.rooms().length,
+    });
+
+    this.rooms.update((rooms) => [...rooms, room]);
+    this.selectedRoomId.set(room.id);
+    this.polygonDraftPoints.set([]);
+    this.polygonDrawing.set(false);
   }
 
   protected removeSelectedRoom(): void {
