@@ -12,6 +12,7 @@ import {
   MapSummaryDto,
   createPolygon,
   createRectanglePolygon,
+  getBoundingBox,
   getProjectedBoundingBox,
   polygonContainsPolygon,
   polygonToRoomModel,
@@ -189,40 +190,24 @@ import { MapEditorCanvasComponent } from './map-editor-canvas.component';
                 <div class="grid-2 compact">
                   <label>Name <input [(ngModel)]="room.name" /></label>
                   <label>Color <input [(ngModel)]="room.color" /></label>
-                  <label>
-                    X
-                    <input
-                      type="number"
-                      [(ngModel)]="room.x"
-                      [disabled]="room.shape === 'polygon'"
-                    />
-                  </label>
-                  <label>
-                    Y
-                    <input
-                      type="number"
-                      [(ngModel)]="room.y"
-                      [disabled]="room.shape === 'polygon'"
-                    />
-                  </label>
-                  <label>
-                    Width
-                    <input
-                      type="number"
-                      min="1"
-                      [(ngModel)]="room.width"
-                      [disabled]="room.shape === 'polygon'"
-                    />
-                  </label>
-                  <label>
-                    Height
-                    <input
-                      type="number"
-                      min="1"
-                      [(ngModel)]="room.height"
-                      [disabled]="room.shape === 'polygon'"
-                    />
-                  </label>
+                  @if (room.shape === 'rectangle') {
+                    <label>
+                      X
+                      <input type="number" [(ngModel)]="room.x" />
+                    </label>
+                    <label>
+                      Y
+                      <input type="number" [(ngModel)]="room.y" />
+                    </label>
+                    <label>
+                      Width
+                      <input type="number" min="1" [(ngModel)]="room.width" />
+                    </label>
+                    <label>
+                      Height
+                      <input type="number" min="1" [(ngModel)]="room.height" />
+                    </label>
+                  }
                 </div>
               </div>
             }
@@ -588,7 +573,7 @@ export class MapEditorFormComponent implements OnInit {
         name: room.name,
         color: room.color,
         sortOrder: index,
-        geometryGeoJson: roomModelToPolygon(room),
+        geometryGeoJson: this.roomGeometry(room),
       })),
       null,
       2,
@@ -606,14 +591,17 @@ export class MapEditorFormComponent implements OnInit {
 
     const box = this.bounds();
     const index = this.rooms().length;
-    const stepX = Math.max(box.width * 0.06, 28);
-    const stepY = Math.max(box.height * 0.05, 24);
-    const width = Math.max(box.width * 0.18, 48);
-    const height = Math.max(box.height * 0.14, 48);
-    const maxX = Math.max(box.minX + 12, box.maxX - width - 12);
-    const maxY = Math.max(box.minY + 12, box.maxY - height - 12);
-    const x = Math.min(box.minX + box.width * 0.1 + stepX * index, maxX);
-    const y = Math.min(box.minY + box.height * 0.1 + stepY * index, maxY);
+    const shortSide = Math.min(box.width, box.height);
+    const minimumRoomSize = Math.max(shortSide * 0.06, 3);
+    const width = Math.max(box.width * 0.1, minimumRoomSize);
+    const height = Math.max(box.height * 0.08, minimumRoomSize);
+    const padding = Math.max(shortSide * 0.02, 1.5);
+    const stepX = Math.max(width * 0.35, minimumRoomSize);
+    const stepY = Math.max(height * 0.35, minimumRoomSize);
+    const maxX = Math.max(box.minX + padding, box.maxX - width - padding);
+    const maxY = Math.max(box.minY + padding, box.maxY - height - padding);
+    const x = Math.min(box.minX + padding + stepX * index, maxX);
+    const y = Math.min(box.minY + padding + stepY * index, maxY);
     const room = polygonToRoomModel(
       unprojectGeoJsonPolygon(createRectanglePolygon(x, y, width, height)),
       {
@@ -654,7 +642,7 @@ export class MapEditorFormComponent implements OnInit {
 
   protected isRoomValid(room: EditorRoomModel): boolean {
     const polygon = this.parsedFootprint();
-    return polygon ? polygonContainsPolygon(polygon, roomModelToPolygon(room)) : false;
+    return polygon ? polygonContainsPolygon(polygon, this.roomGeometry(room)) : false;
   }
 
   protected allRoomsValid(): boolean {
@@ -771,7 +759,7 @@ export class MapEditorFormComponent implements OnInit {
           name: room.name,
           color: room.color,
           sortOrder: index,
-          geometryGeoJson: roomModelToPolygon(room),
+          geometryGeoJson: this.roomGeometry(room),
         })),
       });
 
@@ -856,9 +844,13 @@ export class MapEditorFormComponent implements OnInit {
         name: room.name,
         color: room.color,
         sortOrder: index,
-        geometryGeoJson: roomModelToPolygon(room),
+        geometryGeoJson: this.roomGeometry(room),
       })),
     };
+  }
+
+  private roomGeometry(room: EditorRoomModel): GeoJsonPolygon {
+    return room.shape === 'polygon' ? room.geometryGeoJson : roomModelToPolygon(room);
   }
 
   private extractMessage(error: unknown): string {

@@ -1,7 +1,6 @@
 export type Role = 'admin' | 'user';
 export type BackgroundFitMode = 'contain';
 
-// GeoJSON positions follow EPSG:4326 order: [longitude, latitude].
 export type GeoJsonPosition = [number, number];
 
 const WEB_MERCATOR_RADIUS_METERS = 6378137;
@@ -232,7 +231,11 @@ export function polygonToPointsAttribute(polygon: GeoJsonPolygon): string {
     .join(' ');
 }
 
-function isPointOnSegment(point: GeoJsonPosition, start: GeoJsonPosition, end: GeoJsonPosition): boolean {
+function isPointOnSegment(
+  point: GeoJsonPosition,
+  start: GeoJsonPosition,
+  end: GeoJsonPosition,
+): boolean {
   const [px, py] = point;
   const [sx, sy] = start;
   const [ex, ey] = end;
@@ -302,7 +305,10 @@ function segmentsIntersect(
   );
 }
 
-export function polygonContainsPolygon(container: GeoJsonPolygon, candidate: GeoJsonPolygon): boolean {
+export function polygonContainsPolygon(
+  container: GeoJsonPolygon,
+  candidate: GeoJsonPolygon,
+): boolean {
   const containerRing = getOuterRing(container);
   const candidateRing = getOuterRing(candidate);
   const candidatePoints = candidateRing.slice(0, -1);

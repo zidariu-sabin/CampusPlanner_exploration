@@ -5,13 +5,13 @@ import {
   GeoJsonPolygon,
   GeoJsonPosition,
   createPolygon,
-  createRectanglePolygon,
   getBoundingBox,
   getProjectedBoundingBox,
   polygonContainsPolygon,
   polygonToRoomModel,
   projectedPolygonToPointsAttribute,
   projectGeoJsonPolygon,
+  projectGeoJsonPosition,
   roomModelToPolygon,
   unprojectGeoJsonPolygon,
   unprojectGeoJsonPosition,
@@ -147,20 +147,23 @@ type InteractionState =
               (pointerdown)="startRoomInteraction($event, room, 'drag')"
               (click)="selectedRoomIdChange.emit(room.id)"
             />
-            <text class="room-label" [attr.x]="roomLabelX(room)" [attr.y]="roomLabelY(room)">
+            <text
+              class="room-label"
+              [attr.x]="roomLabelX(room)"
+              [attr.y]="roomLabelY(room)"
+              [attr.font-size]="labelFontSize()"
+            >
               {{ room.name }}
             </text>
-            @if (room.shape === 'rectangle') {
-              <circle
-                class="resize-handle"
-                [class.inactive]="canvasMode() !== 'rooms'"
-                [style.pointer-events]="canvasMode() === 'rooms' ? 'auto' : 'none'"
-                [attr.cx]="roomResizeHandleX(room)"
-                [attr.cy]="roomResizeHandleY(room)"
-                r="4"
-                (pointerdown)="startRoomInteraction($event, room, 'resize')"
-              />
-            }
+            <circle
+              class="resize-handle"
+              [class.inactive]="canvasMode() !== 'rooms'"
+              [style.pointer-events]="canvasMode() === 'rooms' ? 'auto' : 'none'"
+              [attr.cx]="roomResizeHandleX(room)"
+              [attr.cy]="roomResizeHandleY(room)"
+              [attr.r]="handleRadius()"
+              (pointerdown)="startRoomInteraction($event, room, 'resize')"
+            />
           </g>
         }
 
@@ -180,9 +183,9 @@ type InteractionState =
             <circle
               class="polygon-draft-point"
               [class.first]="!!$first"
-              [attr.cx]="point[0]"
-              [attr.cy]="point[1]"
-              r="6"
+              [attr.cx]="projectedDraftPointX(point)"
+              [attr.cy]="projectedDraftPointY(point)"
+              [attr.r]="handleRadius()"
               (pointerdown)="onDraftPointPointerDown($event)"
               (dblclick)="completePolygon($event, $first)"
             />
@@ -232,7 +235,7 @@ type InteractionState =
                 class="crop-handle"
                 [attr.cx]="handle.cx"
                 [attr.cy]="handle.cy"
-                r="7"
+                [attr.r]="cropHandleRadius()"
                 (pointerdown)="startCropResize($event, handle.key)"
               />
             }
@@ -262,6 +265,7 @@ type InteractionState =
       fill: rgba(17, 94, 89, 0.08);
       stroke: var(--brand-strong);
       stroke-width: 2.5;
+      vector-effect: non-scaling-stroke;
     }
 
     .image-pan-layer {
@@ -272,6 +276,7 @@ type InteractionState =
     .room-shape {
       stroke: rgba(31, 42, 51, 0.65);
       cursor: move;
+      vector-effect: non-scaling-stroke;
     }
 
     .room-shape.invalid {
@@ -290,7 +295,6 @@ type InteractionState =
     }
 
     .room-label {
-      font-size: 12px;
       pointer-events: none;
       fill: #0f172a;
     }
@@ -299,6 +303,7 @@ type InteractionState =
       fill: white;
       stroke: var(--ink);
       cursor: nwse-resize;
+      vector-effect: non-scaling-stroke;
     }
 
     .polygon-click-layer {
@@ -312,6 +317,7 @@ type InteractionState =
       stroke-width: 2;
       stroke-dasharray: 8 5;
       pointer-events: none;
+      vector-effect: non-scaling-stroke;
     }
 
     .polygon-draft-point {
@@ -319,6 +325,7 @@ type InteractionState =
       stroke: #0f172a;
       stroke-width: 2;
       cursor: crosshair;
+      vector-effect: non-scaling-stroke;
     }
 
     .polygon-draft-point.first {
@@ -337,6 +344,7 @@ type InteractionState =
       stroke-width: 2;
       stroke-dasharray: 12 6;
       cursor: move;
+      vector-effect: non-scaling-stroke;
     }
 
     .crop-handle {
@@ -344,6 +352,7 @@ type InteractionState =
       stroke: #0f172a;
       stroke-width: 2;
       cursor: pointer;
+      vector-effect: non-scaling-stroke;
     }
   `,
 })
@@ -399,17 +408,30 @@ export class MapEditorCanvasComponent {
 
   protected roomLabelY(room: EditorRoomModel): number {
     const box = getProjectedBoundingBox(roomModelToPolygon(room));
-    return box.minY + Math.min(Math.max(box.height * 0.3, 14), 22);
+    return box.minY + Math.min(Math.max(box.height * 0.3, this.labelFontSize()), box.height * 0.75);
+  }
+
+  protected labelFontSize(): number {
+    const shortSide = Math.min(this.bounds().width, this.bounds().height);
+    return Math.min(Math.max(shortSide * 0.035, 1.8), 6);
+  }
+
+  protected handleRadius(): number {
+    const shortSide = Math.min(this.bounds().width, this.bounds().height);
+    return Math.min(Math.max(shortSide * 0.012, 0.7), 2.5);
+  }
+
+  protected cropHandleRadius(): number {
+    const shortSide = Math.min(this.bounds().width, this.bounds().height);
+    return Math.min(Math.max(shortSide * 0.014, 0.8), 3);
   }
 
   protected roomResizeHandleX(room: EditorRoomModel): number {
-    const box = getProjectedBoundingBox(roomModelToPolygon(room));
-    return box.maxX;
+    return getProjectedBoundingBox(roomModelToPolygon(room)).maxX;
   }
 
   protected roomResizeHandleY(room: EditorRoomModel): number {
-    const box = getProjectedBoundingBox(roomModelToPolygon(room));
-    return box.maxY;
+    return getProjectedBoundingBox(roomModelToPolygon(room)).maxY;
   }
 
   protected backgroundImageRect(): EditorRectangle {
@@ -455,6 +477,14 @@ export class MapEditorCanvasComponent {
 
   protected draftPointsAttribute(): string {
     return projectedPolygonToPointsAttribute(createPolygon(this.polygonDraftPoints()));
+  }
+
+  protected projectedDraftPointX(point: GeoJsonPosition): number {
+    return projectGeoJsonPosition(point)[0];
+  }
+
+  protected projectedDraftPointY(point: GeoJsonPosition): number {
+    return projectGeoJsonPosition(point)[1];
   }
 
   protected startRoomInteraction(
@@ -618,14 +648,12 @@ export class MapEditorCanvasComponent {
             };
           }
 
-          const initialBounds = getProjectedBoundingBox(roomModelToPolygon(interaction.initial));
-          const geometryGeoJson = unprojectGeoJsonPolygon(
-            createRectanglePolygon(
-              initialBounds.minX,
-              initialBounds.minY,
-              Math.max(20, initialBounds.width + deltaX),
-              Math.max(20, initialBounds.height + deltaY),
-            ),
+          const minimumSize = this.minimumRoomSize();
+          const geometryGeoJson = resizePolygon(
+            roomModelToPolygon(interaction.initial),
+            deltaX,
+            deltaY,
+            minimumSize,
           );
 
           return polygonToRoomModel(geometryGeoJson, {
@@ -683,6 +711,11 @@ export class MapEditorCanvasComponent {
 
   private canAddPolygonPoint(): boolean {
     return this.canvasMode() === 'rooms' && this.polygonDrawing() && !!this.footprint();
+  }
+
+  private minimumRoomSize(): number {
+    const shortSide = Math.min(this.bounds().width, this.bounds().height);
+    return Math.max(shortSide * 0.04, 2);
   }
 
   private updateBackgroundDraft(patch: Partial<BackgroundImageEditDraft>): void {
@@ -750,6 +783,33 @@ function translatePolygon(polygon: GeoJsonPolygon, deltaX: number, deltaY: numbe
     ...polygon,
     coordinates: projectGeoJsonPolygon(polygon).coordinates.map((ring) =>
       ring.map((point) => [point[0] + deltaX, point[1] + deltaY] as GeoJsonPosition),
+    ),
+  });
+}
+
+function resizePolygon(
+  polygon: GeoJsonPolygon,
+  deltaX: number,
+  deltaY: number,
+  minimumSize: number,
+): GeoJsonPolygon {
+  const projected = projectGeoJsonPolygon(polygon);
+  const bounds = getBoundingBox(projected);
+  const width = Math.max(minimumSize, bounds.width + deltaX);
+  const height = Math.max(minimumSize, bounds.height + deltaY);
+  const scaleX = bounds.width === 0 ? 1 : width / bounds.width;
+  const scaleY = bounds.height === 0 ? 1 : height / bounds.height;
+
+  return unprojectGeoJsonPolygon({
+    ...projected,
+    coordinates: projected.coordinates.map((ring) =>
+      ring.map(
+        (point) =>
+          [
+            bounds.minX + (point[0] - bounds.minX) * scaleX,
+            bounds.minY + (point[1] - bounds.minY) * scaleY,
+          ] as GeoJsonPosition,
+      ),
     ),
   });
 }
