@@ -32,6 +32,8 @@ import { MapsService } from '../core/maps.service';
 import { ImageManipulationToolsComponent } from './image-manipulation-tools.component';
 import { MapEditorCanvasComponent } from './map-editor-canvas.component';
 
+export type MapEditorWorkflow = 'map' | 'rooms';
+
 @Component({
   selector: 'app-map-editor-form',
   standalone: true,
@@ -52,7 +54,11 @@ import { MapEditorCanvasComponent } from './map-editor-canvas.component';
         <div class="chips">
           <span class="chip">SVG editor</span>
           <span class="chip">GeoJSON native</span>
-          <span class="chip">Image tools</span>
+          @if (workflow === 'map') {
+            <span class="chip">Image tools</span>
+          } @else {
+            <span class="chip">Room boundaries</span>
+          }
         </div>
       </section>
 
@@ -65,84 +71,97 @@ import { MapEditorCanvasComponent } from './map-editor-canvas.component';
       }
 
       <section class="grid-2 editor-layout">
-        <article class="card panel form-panel">
-          <h2>Map settings</h2>
-          <label>Name <input [(ngModel)]="name" /></label>
-          <label>Floor label <input [(ngModel)]="floorLabel" /></label>
-          <label>Timezone <input [(ngModel)]="timezone" /></label>
-          <label>
-            Parent map
-            <select
-              [ngModel]="parentMapId() ?? ''"
-              (ngModelChange)="parentMapId.set($event || null)"
-            >
-              <option value="">No parent</option>
-              @for (map of availableParentMaps(); track map.id) {
-                <option [value]="map.id">{{ map.name }} · {{ map.floorLabel }}</option>
+        @if (workflow === 'map') {
+          <article class="card panel form-panel">
+            <h2>Map settings</h2>
+            <label>Name <input [(ngModel)]="name" /></label>
+            <label>Floor label <input [(ngModel)]="floorLabel" /></label>
+            <label>Timezone <input [(ngModel)]="timezone" /></label>
+            <label>
+              Parent map
+              <select
+                [ngModel]="parentMapId() ?? ''"
+                (ngModelChange)="parentMapId.set($event || null)"
+              >
+                <option value="">No parent</option>
+                @for (map of availableParentMaps(); track map.id) {
+                  <option [value]="map.id">{{ map.name }} · {{ map.floorLabel }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              Footprint GeoJSON
+              <textarea [(ngModel)]="footprintText"></textarea>
+            </label>
+            <label>
+              Background image
+              <input type="file" accept="image/*" (change)="onBackgroundSelected($event)" />
+            </label>
+
+            <app-image-manipulation-tools
+              [mode]="canvasMode()"
+              [draft]="backgroundDraft()"
+              [canUseImageTools]="canUseImageTools()"
+              [canApplyBackgroundEdits]="canApplyBackgroundEdits()"
+              [processingBackground]="processingBackground()"
+              [hint]="backgroundToolHint()"
+              (modeChange)="canvasMode.set($event)"
+              (draftChange)="backgroundDraft.set($event)"
+              (rotate)="rotateBackground($event)"
+              (reset)="resetBackgroundEdits()"
+              (apply)="applyBackgroundEdits()"
+            />
+
+            <div class="actions">
+              <button type="button" class="ghost" (click)="loadSampleFootprint()">
+                Use sample footprint
+              </button>
+              <button type="button" (click)="saveMap()">Save map</button>
+              @if (mapId()) {
+                <a class="button ghost" [routerLink]="['/maps', mapId(), 'edit', 'rooms']">
+                  Define rooms
+                </a>
               }
-            </select>
-          </label>
-          <label>
-            Footprint GeoJSON
-            <textarea [(ngModel)]="footprintText"></textarea>
-          </label>
-          <label>
-            Background image
-            <input type="file" accept="image/*" (change)="onBackgroundSelected($event)" />
-          </label>
-
-          <app-image-manipulation-tools
-            [mode]="canvasMode()"
-            [draft]="backgroundDraft()"
-            [canUseImageTools]="canUseImageTools()"
-            [canApplyBackgroundEdits]="canApplyBackgroundEdits()"
-            [processingBackground]="processingBackground()"
-            [hint]="backgroundToolHint()"
-            (modeChange)="canvasMode.set($event)"
-            (draftChange)="backgroundDraft.set($event)"
-            (rotate)="rotateBackground($event)"
-            (reset)="resetBackgroundEdits()"
-            (apply)="applyBackgroundEdits()"
-          />
-
-          <div class="actions">
-            <button type="button" class="ghost" (click)="loadSampleFootprint()">
-              Use sample footprint
-            </button>
-            <button type="button" (click)="saveMap()">Save map</button>
-          </div>
-        </article>
+            </div>
+          </article>
+        }
 
         <article class="card panel canvas-panel">
           <div class="canvas-header">
             <h2>Editor canvas</h2>
             <div class="actions">
-              <div class="segmented" aria-label="Room shape">
-                <button
-                  type="button"
-                  class="ghost"
-                  [class.active]="roomShape() === 'rectangle'"
-                  (click)="setRoomShape('rectangle')"
-                >
-                  Square
+              @if (workflow === 'rooms') {
+                <div class="segmented" aria-label="Room shape">
+                  <button
+                    type="button"
+                    class="ghost"
+                    [class.active]="roomShape() === 'rectangle'"
+                    (click)="setRoomShape('rectangle')"
+                  >
+                    Square
+                  </button>
+                  <button
+                    type="button"
+                    class="ghost"
+                    [class.active]="roomShape() === 'polygon'"
+                    (click)="setRoomShape('polygon')"
+                  >
+                    Polygon
+                  </button>
+                </div>
+                <button type="button" class="ghost" (click)="exportSvg()">Export SVG</button>
+                <button type="button" class="ghost" (click)="addRoom()">
+                  {{ roomShape() === 'polygon' ? 'Start polygon' : 'Add square' }}
                 </button>
-                <button
-                  type="button"
-                  class="ghost"
-                  [class.active]="roomShape() === 'polygon'"
-                  (click)="setRoomShape('polygon')"
-                >
-                  Polygon
-                </button>
-              </div>
-              <button type="button" class="ghost" (click)="exportSvg()">Export SVG</button>
-              <button type="button" class="ghost" (click)="addRoom()">
-                {{ roomShape() === 'polygon' ? 'Start polygon' : 'Add square' }}
-              </button>
-              @if (selectedRoom()) {
-                <button type="button" class="danger" (click)="removeSelectedRoom()">
-                  Delete room
-                </button>
+                @if (selectedRoom()) {
+                  <button type="button" class="danger" (click)="removeSelectedRoom()">
+                    Delete room
+                  </button>
+                }
+              } @else if (mapId()) {
+                <a class="button ghost" [routerLink]="['/maps', mapId(), 'edit']">
+                  Editor dashboard
+                </a>
               }
             </div>
           </div>
@@ -151,13 +170,13 @@ import { MapEditorCanvasComponent } from './map-editor-canvas.component';
 
           <app-map-editor-canvas
             [footprint]="parsedFootprint()"
-            [rooms]="rooms()"
-            [selectedRoomId]="selectedRoomId()"
-            [canvasMode]="canvasMode()"
+            [rooms]="workflow === 'rooms' ? rooms() : []"
+            [selectedRoomId]="workflow === 'rooms' ? selectedRoomId() : null"
+            [canvasMode]="workflow === 'rooms' ? 'rooms' : canvasMode()"
             [backgroundUrl]="backgroundUrl()"
             [backgroundDraft]="backgroundDraft()"
-            [polygonDrawing]="polygonDrawing()"
-            [polygonDraftPoints]="polygonDraftPoints()"
+            [polygonDrawing]="workflow === 'rooms' && polygonDrawing()"
+            [polygonDraftPoints]="workflow === 'rooms' ? polygonDraftPoints() : []"
             (roomsChange)="rooms.set($event)"
             (selectedRoomIdChange)="selectedRoomId.set($event)"
             (backgroundDraftChange)="backgroundDraft.set($event)"
@@ -167,81 +186,86 @@ import { MapEditorCanvasComponent } from './map-editor-canvas.component';
         </article>
       </section>
 
-      <section class="grid-2">
-        <article class="card panel">
-          <div class="section-header">
-            <div>
-              <h2>Rooms</h2>
-              <p class="muted">Name, color, and adjust room geometry directly on the canvas.</p>
-            </div>
-            <span class="chip">{{ rooms().length }} rooms</span>
-          </div>
-          <div class="room-list">
-            @for (room of rooms(); track room.id) {
-              <div
-                class="room-item"
-                [class.selected]="selectedRoomId() === room.id"
-                (click)="selectedRoomId.set(room.id)"
-              >
-                <div class="room-item-header">
-                  <div class="color-swatch" [style.background]="room.color"></div>
-                  <strong>{{ room.name }}</strong>
-                </div>
-                <div class="grid-2 compact">
-                  <label>Name <input [(ngModel)]="room.name" /></label>
-                  <label>Color <input [(ngModel)]="room.color" /></label>
-                  @if (room.shape === 'rectangle') {
-                    <label>
-                      X
-                      <input type="number" [(ngModel)]="room.x" />
-                    </label>
-                    <label>
-                      Y
-                      <input type="number" [(ngModel)]="room.y" />
-                    </label>
-                    <label>
-                      Width
-                      <input type="number" min="1" [(ngModel)]="room.width" />
-                    </label>
-                    <label>
-                      Height
-                      <input type="number" min="1" [(ngModel)]="room.height" />
-                    </label>
-                  }
-                </div>
+      @if (workflow === 'rooms') {
+        <section class="grid-2">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <h2>Rooms</h2>
+                <p class="muted">Name, color, and adjust room geometry directly on the canvas.</p>
               </div>
-            }
-          </div>
-        </article>
-
-        <article class="card panel">
-          <div class="section-header">
-            <div>
-              <h2>Rooms GeoJSON preview</h2>
-              <p class="muted">This matches the rooms array sent to the API when you save.</p>
+              <span class="chip">{{ rooms().length }} rooms</span>
             </div>
-            <span class="chip">{{ rooms().length }} room payloads</span>
-          </div>
-          @if (rooms().length > 0) {
-            <pre class="json-preview">{{ roomsPayloadPreview() }}</pre>
-          } @else {
-            <p class="muted">Add at least one room to build the room payload.</p>
-          }
-          @if (invalidRoomNames().length > 0) {
-            <p class="message error">
-              These rooms are outside the footprint polygon: {{ invalidRoomNames().join(', ') }}
-            </p>
-          }
-          <div class="actions top-gap">
-            <button type="button" (click)="saveRooms()" [disabled]="!mapId()">Save rooms</button>
-            @if (mapId()) {
-              <a class="button ghost" [routerLink]="['/maps', mapId(), 'book']"
-                >Open booking view</a
-              >
+            <div class="room-list">
+              @for (room of rooms(); track room.id) {
+                <div
+                  class="room-item"
+                  [class.selected]="selectedRoomId() === room.id"
+                  (click)="selectedRoomId.set(room.id)"
+                >
+                  <div class="room-item-header">
+                    <div class="color-swatch" [style.background]="room.color"></div>
+                    <strong>{{ room.name }}</strong>
+                  </div>
+                  <div class="grid-2 compact">
+                    <label>Name <input [(ngModel)]="room.name" /></label>
+                    <label>Color <input [(ngModel)]="room.color" /></label>
+                    @if (room.shape === 'rectangle') {
+                      <label>
+                        X
+                        <input type="number" [(ngModel)]="room.x" />
+                      </label>
+                      <label>
+                        Y
+                        <input type="number" [(ngModel)]="room.y" />
+                      </label>
+                      <label>
+                        Width
+                        <input type="number" min="1" [(ngModel)]="room.width" />
+                      </label>
+                      <label>
+                        Height
+                        <input type="number" min="1" [(ngModel)]="room.height" />
+                      </label>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <h2>Rooms GeoJSON preview</h2>
+                <p class="muted">This matches the rooms array sent to the API when you save.</p>
+              </div>
+              <span class="chip">{{ rooms().length }} room payloads</span>
+            </div>
+            @if (rooms().length > 0) {
+              <pre class="json-preview">{{ roomsPayloadPreview() }}</pre>
+            } @else {
+              <p class="muted">Add at least one room to build the room payload.</p>
             }
-          </div>
-        </article>
-      </section>
+            @if (invalidRoomNames().length > 0) {
+              <p class="message error">
+                These rooms are outside the footprint polygon: {{ invalidRoomNames().join(', ') }}
+              </p>
+            }
+            <div class="actions top-gap">
+              <button type="button" (click)="saveRooms()" [disabled]="!mapId()">Save rooms</button>
+              @if (mapId()) {
+                <a class="button ghost" [routerLink]="['/maps', mapId(), 'edit', 'map']">
+                  Configure map
+                </a>
+                <a class="button ghost" [routerLink]="['/maps', mapId(), 'book']"
+                  >Open booking view</a
+                >
+              }
+            </div>
+          </article>
+        </section>
+      }
     </div>
   `,
   styles: `
@@ -366,6 +390,7 @@ export class MapEditorFormComponent implements OnInit {
   }
 
   @Input() embedded = false;
+  @Input() workflow: MapEditorWorkflow = 'map';
 
   protected name = 'Main Campus Floor';
   protected floorLabel = 'Ground Floor';
@@ -396,6 +421,9 @@ export class MapEditorFormComponent implements OnInit {
   async ngOnInit(): Promise<void> {
     await this.loadParentMapOptions();
     this.resetBackgroundEdits();
+    if (this.workflow === 'rooms') {
+      this.canvasMode.set('rooms');
+    }
 
     if (this.mapId()) {
       await this.loadMap(this.mapId()!);
@@ -404,26 +432,28 @@ export class MapEditorFormComponent implements OnInit {
 
   protected headerTitle(): string {
     if (!this.mapId()) {
-      return 'Create Map';
+      return 'Configure Map';
     }
 
     if (this.embedded) {
       return this.name;
     }
 
-    return 'Edit Map';
+    return this.workflow === 'rooms' ? 'Define Rooms' : 'Configure Map';
   }
 
   protected headerSubtitle(): string {
     if (!this.mapId()) {
-      return 'Trace the footprint as GeoJSON, align a background image, then place rooms inside it.';
+      return 'Create the digital map footprint and align the background image before defining rooms.';
     }
 
     if (this.embedded) {
       return 'Editing form for a child map of the currently opened map.';
     }
 
-    return 'Trace the footprint as GeoJSON, align a background image, then place rooms inside it.';
+    return this.workflow === 'rooms'
+      ? 'Draw, drag, resize, and save room boundaries over the saved map footprint.'
+      : 'Set the map metadata, footprint GeoJSON, and background image alignment.';
   }
 
   protected availableParentMaps(): MapSummaryDto[] {
@@ -519,6 +549,14 @@ export class MapEditorFormComponent implements OnInit {
   }
 
   protected canvasModeHint(): string {
+    if (this.workflow === 'rooms') {
+      if (this.polygonDrawing()) {
+        return 'Click the canvas to add polygon points. Double-click the first point to close the room, or press Escape to reset the points.';
+      }
+
+      return 'Room editing mode is active. Add rooms, then drag or resize them inside the saved footprint.';
+    }
+
     if (this.polygonDrawing() && this.canvasMode() === 'rooms') {
       return 'Click the canvas to add polygon points. Double-click the first point to close the room, or press Escape to reset the points.';
     }
@@ -666,6 +704,7 @@ export class MapEditorFormComponent implements OnInit {
     }
 
     try {
+      const isNewMap = !this.mapId();
       const payload = {
         name: this.name,
         floorLabel: this.floorLabel,
@@ -678,10 +717,7 @@ export class MapEditorFormComponent implements OnInit {
         ? await this.mapsService.update(this.mapId()!, payload)
         : await this.mapsService.create(payload);
 
-      if (!this.mapId()) {
-        this.mapId.set(this.currentMap.id);
-        await this.router.navigate(['/maps', this.currentMap.id, 'edit']);
-      }
+      this.mapId.set(this.currentMap.id);
 
       await this.loadParentMapOptions();
 
@@ -696,6 +732,9 @@ export class MapEditorFormComponent implements OnInit {
 
       this.resetBackgroundEdits();
       this.message.set('Map saved.');
+      if (isNewMap) {
+        await this.router.navigate(['/maps', this.currentMap.id, 'edit', 'map']);
+      }
     } catch (error) {
       this.error.set(this.extractMessage(error));
     }
