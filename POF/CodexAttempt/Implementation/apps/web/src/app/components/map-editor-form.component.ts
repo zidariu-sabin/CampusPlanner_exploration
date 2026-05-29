@@ -31,6 +31,7 @@ import { downloadMapSvg, readBlobAsDataUrl, type ExportableMap } from '../core/m
 import { MapsService } from '../core/maps.service';
 import { ImageManipulationToolsComponent } from './image-manipulation-tools.component';
 import { MapEditorCanvasComponent } from './map-editor-canvas.component';
+import { MapboxFootprintPickerComponent } from './mapbox-footprint-picker.component';
 
 export type MapEditorWorkflow = 'map' | 'rooms';
 
@@ -43,6 +44,7 @@ export type MapEditorWorkflow = 'map' | 'rooms';
     RouterLink,
     ImageManipulationToolsComponent,
     MapEditorCanvasComponent,
+    MapboxFootprintPickerComponent,
   ],
   template: `
     <div class="editor-form" [class.page]="!embedded" [class.embedded-form]="embedded">
@@ -93,6 +95,10 @@ export type MapEditorWorkflow = 'map' | 'rooms';
               Footprint GeoJSON
               <textarea [(ngModel)]="footprintText"></textarea>
             </label>
+            <app-mapbox-footprint-picker
+              [footprint]="parsedFootprint()"
+              (footprintChange)="setFootprintFromMapbox($event)"
+            />
             <label>
               Background image
               <input type="file" accept="image/*" (change)="onBackgroundSelected($event)" />
@@ -475,6 +481,10 @@ export class MapEditorFormComponent implements OnInit {
       2,
     );
     this.resetBackgroundEdits();
+  }
+
+  protected setFootprintFromMapbox(footprint: GeoJsonPolygon): void {
+    this.footprintText = JSON.stringify(footprint, null, 2);
   }
 
   protected onBackgroundSelected(event: Event): void {
