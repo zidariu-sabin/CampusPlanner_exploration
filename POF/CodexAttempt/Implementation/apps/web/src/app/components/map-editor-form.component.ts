@@ -95,10 +95,6 @@ export type MapEditorWorkflow = 'map' | 'rooms';
               Footprint GeoJSON
               <textarea [(ngModel)]="footprintText"></textarea>
             </label>
-            <app-mapbox-footprint-picker
-              [footprint]="parsedFootprint()"
-              (footprintChange)="setFootprintFromMapbox($event)"
-            />
             <label>
               Background image
               <input type="file" accept="image/*" (change)="onBackgroundSelected($event)" />
@@ -173,6 +169,15 @@ export type MapEditorWorkflow = 'map' | 'rooms';
           </div>
 
           <p class="muted canvas-mode-hint">{{ canvasModeHint() }}</p>
+
+          @if (workflow === 'map') {
+            <app-mapbox-footprint-picker
+              [footprint]="parsedFootprint()"
+              [backgroundUrl]="backgroundUrl()"
+              [backgroundDraft]="backgroundDraft()"
+              (footprintChange)="setFootprintFromMapbox($event)"
+            />
+          }
 
           <app-map-editor-canvas
             [footprint]="parsedFootprint()"
