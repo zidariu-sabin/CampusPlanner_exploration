@@ -17,11 +17,12 @@ import { downloadMapSvg } from '../core/map-svg-export';
 import { MapsService } from '../core/maps.service';
 import { MeetingsService } from '../core/meetings.service';
 import { UsersService } from '../core/users.service';
+import { MapboxMapViewComponent } from './mapbox-map-view.component';
 
 @Component({
   selector: 'app-map-booking-form',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MapboxMapViewComponent],
   template: `
     <div class="booking-form" [class.page]="!embedded" [class.embedded-form]="embedded">
       <section class="section-header">
@@ -61,6 +62,12 @@ import { UsersService } from '../core/users.service';
           </div>
 
           @if (map()) {
+            <app-mapbox-map-view
+              [map]="map()!"
+              [selectedRoomId]="selectedRoomId"
+              (roomSelected)="selectedRoomId = $event"
+            />
+
             <svg class="viewer-svg" [attr.viewBox]="viewBox()">
               <defs>
                 <clipPath [attr.id]="backgroundClipPathId">
