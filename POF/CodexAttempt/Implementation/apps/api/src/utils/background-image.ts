@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { getBoundingBox, type GeoJsonPolygon, type ProcessBackgroundImageRequest } from '@campus/contracts';
+import { getProjectedBoundingBox, type GeoJsonPolygon, type ProcessBackgroundImageRequest } from '@campus/contracts';
 
 interface CanvasSize {
   width: number;
@@ -62,7 +62,7 @@ export async function processMapBackgroundImage(
 }
 
 function getCanvasSize(sourceWidth: number, sourceHeight: number, footprintGeoJson: GeoJsonPolygon): CanvasSize {
-  const bounds = getBoundingBox(footprintGeoJson);
+  const bounds = getProjectedBoundingBox(footprintGeoJson);
   const aspectRatio = bounds.width > 0 && bounds.height > 0 ? bounds.width / bounds.height : 1;
   const sourceArea = Math.max(sourceWidth * sourceHeight, 1);
   const width = Math.max(Math.round(Math.sqrt(sourceArea * aspectRatio)), 1);
@@ -77,7 +77,10 @@ function normalizeCrop(
 ): { left: number; top: number; width: number; height: number } {
   const left = Math.max(Math.min(Math.round(cropRect.x * canvasSize.width), canvasSize.width - 1), 0);
   const top = Math.max(Math.min(Math.round(cropRect.y * canvasSize.height), canvasSize.height - 1), 0);
-  const right = Math.max(Math.min(Math.round((cropRect.x + cropRect.width) * canvasSize.width), canvasSize.width), left + 1);
+  const right = Math.max(
+    Math.min(Math.round((cropRect.x + cropRect.width) * canvasSize.width), canvasSize.width),
+    left + 1,
+  );
   const bottom = Math.max(
     Math.min(Math.round((cropRect.y + cropRect.height) * canvasSize.height), canvasSize.height),
     top + 1,

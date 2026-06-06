@@ -13,8 +13,9 @@ For a fuller description of the application layers, database schema, map/room po
 ## Local development
 
 1. Copy `apps/api/.env.example` to `apps/api/.env`.
-2. Start Postgres with `docker compose -f infra/docker-compose.yml up -d`.
-3. Run `npm install` in this directory.
-4. Run `npm run dev`.
+2. ensure `docker context use default`
+3. Start Postgres with `docker compose -f infra/docker-compose.yml up -d`.
+4. Run `npm install` in this directory.
+5. Run `npm run dev`.
 
 The API runs migrations automatically on startup and seeds the initial admin account from the environment.
