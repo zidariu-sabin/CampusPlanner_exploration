@@ -12,11 +12,11 @@ Standalone visual mockup project for iterating the Campus Planner redesign.
 
 ## Screens
 
-1. Organization Dashboard
+1. Dashboard
 2. Campus And Building Configuration
-3. Floor Import Pipeline
+3. Space configuration
 4. Room Booking
-5. Admin Settings
+5. Organization settings
 
 ## Run
 
@@ -24,4 +24,3 @@ Standalone visual mockup project for iterating the Campus Planner redesign.
 npm install
 npm run dev
 ```
-

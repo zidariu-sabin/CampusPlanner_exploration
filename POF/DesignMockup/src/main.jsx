@@ -50,10 +50,25 @@ const campusSteps = [
   },
 ];
 
+const campusSetupSteps = [
+  {
+    title: 'Definition',
+    summary: 'Set the origin and define the campus footprint with direct GeoJSON input.',
+  },
+  {
+    title: 'Upload',
+    summary: 'Upload the cadastral image, then move, scale, and rotate it to match the footprint.',
+  },
+  {
+    title: 'Define spaces',
+    summary: 'Define buildings, outdoor resources, and POIs inside the campus boundary.',
+  },
+];
+
 const floorImportSteps = [
   {
-    title: 'Select floor',
-    summary: 'Choose the building, level, and footprint that will receive the plan.',
+    title: 'Select space',
+    summary: 'Choose the campus space, level, and footprint that will receive the plan.',
   },
   {
     title: 'Upload',
@@ -69,7 +84,7 @@ const floorImportSteps = [
   },
   {
     title: 'Publish',
-    summary: 'Make the floor available to viewers and booking workflows.',
+    summary: 'Make the configured space available to viewers and booking workflows.',
   },
 ];
 
@@ -92,16 +107,17 @@ const users = [
 ];
 
 const screens = [
-  { id: 'dashboard', label: 'Organization Dashboard' },
+  { id: 'dashboard', label: 'Dashboard' },
   { id: 'campus', label: 'Campus Configuration' },
-  { id: 'import', label: 'Floor Import Pipeline' },
+  { id: 'import', label: 'Space configuration' },
   { id: 'booking', label: 'Room Booking' },
-  { id: 'settings', label: 'Admin Settings' },
+  { id: 'settings', label: 'Organization settings' },
 ];
 
 function App() {
   const [activeScreen, setActiveScreen] = useState('dashboard');
   const [activeCampusStep, setActiveCampusStep] = useState(0);
+  const [activeCampusSetupStep, setActiveCampusSetupStep] = useState(0);
   const [activeImportStep, setActiveImportStep] = useState(1);
 
   const selectedScreen = useMemo(
@@ -143,6 +159,9 @@ function App() {
                       onClick={() => {
                         setActiveScreen('campus');
                         setActiveCampusStep(stepIndex);
+                        if (stepIndex === 0) {
+                          setActiveCampusSetupStep(0);
+                        }
                       }}
                     >
                       <span>2.{stepIndex + 1}</span>
@@ -175,7 +194,12 @@ function App() {
 
         {activeScreen === 'dashboard' && <DashboardScreen onAddCampus={() => setActiveScreen('campus')} />}
         {activeScreen === 'campus' && (
-          <CampusScreen activeStep={activeCampusStep} onStepChange={setActiveCampusStep} />
+          <CampusScreen
+            activeStep={activeCampusStep}
+            setupStep={activeCampusSetupStep}
+            onOpenSpacesSetup={() => setActiveCampusStep(1)}
+            onSetupStepChange={setActiveCampusSetupStep}
+          />
         )}
         {activeScreen === 'import' && (
           <ImportScreen activeStep={activeImportStep} onStepChange={setActiveImportStep} />
@@ -233,20 +257,62 @@ function DashboardScreen({ onAddCampus }) {
   );
 }
 
-function CampusScreen({ activeStep, onStepChange }) {
+function CampusScreen({ activeStep, setupStep, onOpenSpacesSetup, onSetupStepChange }) {
   return (
     <ScreenShell>
       {activeStep === 0 && (
-        <section className="map-layout">
-          <CampusSetupCanvas activeStep={activeStep} />
-          <Panel title={campusSteps[activeStep].title} subtitle={campusSteps[activeStep].summary}>
-            <CampusSetupPanel />
-          </Panel>
-        </section>
+        <CampusSetupWorkflow
+          activeStep={setupStep}
+          onOpenSpacesSetup={onOpenSpacesSetup}
+          onStepChange={onSetupStepChange}
+        />
       )}
 
       {activeStep === 1 && <CampusSpacesSetupPage />}
     </ScreenShell>
+  );
+}
+
+function CampusSetupWorkflow({ activeStep, onOpenSpacesSetup, onStepChange }) {
+  if (activeStep === 2) {
+    return (
+      <>
+        <CampusSetupStepStrip activeStep={activeStep} onStepChange={onStepChange} />
+        <CampusDefineSpacesStep onOpenSpacesSetup={onOpenSpacesSetup} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <CampusSetupStepStrip activeStep={activeStep} onStepChange={onStepChange} />
+      <section className="map-layout">
+        <CampusSetupCanvas activeStep={activeStep} />
+        <Panel title={campusSetupSteps[activeStep].title} subtitle={campusSetupSteps[activeStep].summary}>
+          {activeStep === 0 && <CampusDefinitionPanel />}
+          {activeStep === 1 && <CampusUploadPanel />}
+        </Panel>
+      </section>
+    </>
+  );
+}
+
+function CampusSetupStepStrip({ activeStep, onStepChange }) {
+  return (
+    <section className="step-strip compact-step-strip">
+      {campusSetupSteps.map((step, index) => (
+        <button
+          type="button"
+          key={step.title}
+          className={index === activeStep ? 'active' : ''}
+          onClick={() => onStepChange(index)}
+        >
+          <span>{index + 1}</span>
+          <strong>{step.title}</strong>
+          <small>{step.summary}</small>
+        </button>
+      ))}
+    </section>
   );
 }
 
@@ -311,7 +377,7 @@ function BookingScreen() {
             </label>
             <label>
               Notes
-              <textarea defaultValue="Bring latest floor import samples." />
+              <textarea defaultValue="Bring latest space configuration samples." />
             </label>
           </div>
           <button className="primary-action" type="button">Confirm booking</button>
@@ -411,7 +477,7 @@ function Task({ title, label, urgent }) {
 }
 
 function CampusSetupCanvas({ activeStep }) {
-  const showSpaces = activeStep >= 1;
+  const showSpaces = activeStep >= 2;
   return (
     <section className="map-panel">
       <svg viewBox="0 0 700 520" role="img" aria-label="Campus cadastral map configuration">
@@ -424,7 +490,7 @@ function CampusSetupCanvas({ activeStep }) {
             <path d="M64 425 L118 112 L620 72 L660 405 L410 474 Z" />
           </g>
         )}
-        <g className={activeStep === 0 ? 'uploaded-image active cadastral-image' : 'uploaded-image cadastral-image'}>
+        <g className={activeStep === 1 ? 'uploaded-image active cadastral-image' : 'uploaded-image cadastral-image'}>
           <path d="M110 392 C194 326 236 318 300 250 C384 164 470 126 610 90" />
           <path d="M95 290 H632 M126 204 H602 M238 122 V448 M382 96 V470 M525 84 V428" />
         </g>
@@ -442,12 +508,11 @@ function CampusSetupCanvas({ activeStep }) {
         )}
       </svg>
       <div className="floating-toolbar">
-        {activeStep === 0 && <button className="active" type="button">Import cadastral</button>}
         {activeStep === 0 && <button type="button">Set origin</button>}
-        {activeStep === 0 && <button type="button">Footprint</button>}
-        {activeStep === 1 && <button className="active" type="button">Add building</button>}
-        {activeStep === 1 && <button type="button">Outdoor space</button>}
-        {activeStep === 1 && <button type="button">POI</button>}
+        {activeStep === 0 && <button className="active" type="button">Footprint</button>}
+        {activeStep === 1 && <button className="active" type="button">Move</button>}
+        {activeStep === 1 && <button className="active" type="button">Scale</button>}
+        {activeStep === 1 && <button className="active" type="button">Rotate</button>}
       </div>
     </section>
   );
@@ -457,7 +522,7 @@ function FloorImportCanvas({ activeStep }) {
   const showRooms = activeStep >= 2;
   return (
     <section className="map-panel">
-      <svg viewBox="0 0 700 500" role="img" aria-label="Floor import canvas">
+      <svg viewBox="0 0 700 500" role="img" aria-label="Space configuration canvas">
         <path d="M92 74 H612 V410 H465 V456 H92 Z" className="floor-footprint" />
         <g className={activeStep === 1 ? 'uploaded-image active' : 'uploaded-image'}>
           <rect x="118" y="102" width="462" height="286" rx="4" />
@@ -516,7 +581,7 @@ function BookingMap() {
   );
 }
 
-function CampusSetupPanel() {
+function CampusDefinitionPanel() {
   return (
     <div className="form-stack">
       <label>
@@ -554,15 +619,70 @@ function CampusSetupPanel() {
 }`}
         />
       </label>
+      <div className="task-list">
+        <Task title="Campus boundary GeoJSON closes correctly" label="Valid" />
+        <Task title="Coordinate origin is visible on canvas" label="Ready" />
+      </div>
+    </div>
+  );
+}
+
+function CampusUploadPanel() {
+  return (
+    <div className="form-stack">
+      <div className="dropzone">
+        <strong>main-campus-cadastral.png</strong>
+        <span>Mock cadastral image uploaded. Move, scale, and rotate it until it matches the footprint.</span>
+      </div>
       <label>Move X <input type="range" min="-100" max="100" defaultValue="8" /></label>
       <label>Move Y <input type="range" min="-100" max="100" defaultValue="-12" /></label>
       <label>Scale <input type="range" min="50" max="140" defaultValue="96" /></label>
       <label>Rotation <input type="range" min="-10" max="10" defaultValue="1" /></label>
+      <label>Opacity <input type="range" min="20" max="100" defaultValue="78" /></label>
       <div className="task-list">
         <Task title="Cadastral map aligned to campus footprint" label="Draft" />
-        <Task title="Campus boundary GeoJSON closes correctly" label="Valid" />
+        <Task title="Image remains inside visible campus bounds" label="Ready" />
       </div>
     </div>
+  );
+}
+
+function CampusDefineSpacesStep({ onOpenSpacesSetup }) {
+  return (
+    <section className="map-layout">
+      <CampusSetupCanvas activeStep={2} />
+      <Panel
+        title="Define spaces"
+        subtitle="Choose an existing space to configure, or add a new building/outdoor resource."
+        action="Add space"
+        onAction={onOpenSpacesSetup}
+      >
+        <div className="form-stack">
+          <div className="inline-form-title">
+            <strong>Space selection</strong>
+            <span>
+              This is the intermediary step. Opening a space takes you to the detailed Spaces setup page.
+            </span>
+          </div>
+          <div className="card-list">
+            {spaces.map((space) => (
+              <button
+                className="space-select-card"
+                key={space.name}
+                type="button"
+                onClick={onOpenSpacesSetup}
+              >
+                <div>
+                  <strong>{space.name}</strong>
+                  <p>{space.type} · {space.details}</p>
+                </div>
+                <Badge tone={space.state === 'Ready' ? 'good' : 'warn'}>{space.state}</Badge>
+              </button>
+            ))}
+          </div>
+        </div>
+      </Panel>
+    </section>
   );
 }
 
@@ -570,23 +690,55 @@ function CampusSpacesSetupPage() {
   return (
     <section className="map-layout side-first">
       <div className="side-stack">
-        <Panel title="Campus setup" subtitle="Create or edit the campus-level configuration" action="Save campus">
+        <Panel title="Space details" subtitle="Information about the selected campus space" action="Save space">
           <div className="form-stack">
             <label>
-              Campus name
-              <input defaultValue="Main Academic Campus" />
+              Space name
+              <input defaultValue="Engineering Building" />
             </label>
             <label>
-              Timezone
-              <input defaultValue="Europe/Bucharest" />
+              Space type
+              <input defaultValue="Building" />
             </label>
             <label>
-              Boundary source
-              <input defaultValue="Draw on map or paste GeoJSON later" />
+              Internal reference
+              <input defaultValue="ENG-BLDG" />
+            </label>
+            <label>
+              Bookable mode
+              <input defaultValue="Not directly bookable - floors and rooms are bookable" />
             </label>
           </div>
         </Panel>
-        <Panel title="Spaces" subtitle="Buildings and outdoor resources" action="Draw space">
+
+        <Panel title="Space localization" subtitle="Coordinates saved for future search, routing, and floor assignment">
+          <div className="form-stack">
+            <label>
+              Space footprint GeoJSON
+              <textarea
+                className="geojson-input space-geojson-input"
+                defaultValue={`{
+  "type": "Polygon",
+  "coordinates": [
+    [
+      [175, 155],
+      [305, 155],
+      [305, 239],
+      [175, 239],
+      [175, 155]
+    ]
+  ]
+}`}
+              />
+            </label>
+            <div className="task-list">
+              <Task title="Space footprint is inside campus boundary" label="Valid" />
+              <Task title="Drag polygon on canvas to reposition" label="Mocked" />
+            </div>
+          </div>
+        </Panel>
+
+        <Panel title="Existing spaces" subtitle="Other spaces in this campus">
           <div className="card-list">
             {spaces.map((space) => (
               <article className="compact-card" key={space.name}>
@@ -600,30 +752,38 @@ function CampusSpacesSetupPage() {
           </div>
         </Panel>
       </div>
-      <CampusSpacesMap />
+      <CampusSpaceDefinitionCanvas />
     </section>
   );
 }
 
-function CampusSpacesMap() {
+function CampusSpaceDefinitionCanvas() {
   return (
     <section className="map-panel">
-      <svg viewBox="0 0 700 520" role="img" aria-label="Campus spaces configuration map">
+      <svg viewBox="0 0 700 520" role="img" aria-label="Campus space definition canvas">
         <path d="M82 380 C180 310 224 320 300 250 C386 170 482 138 618 92" className="road" />
         <path d="M64 425 L118 112 L620 72 L660 405 L410 474 Z" className="campus-boundary" />
-        <rect x="175" y="155" width="130" height="84" rx="8" className="building" />
-        <rect x="365" y="118" width="142" height="94" rx="8" className="building" />
-        <rect x="230" y="305" width="155" height="74" rx="8" className="building" />
-        <rect x="470" y="310" width="95" height="58" rx="28" className="outdoor" />
+        <rect x="365" y="118" width="142" height="94" rx="8" className="building muted-space" />
+        <rect x="230" y="305" width="155" height="74" rx="8" className="building muted-space" />
+        <rect x="470" y="310" width="95" height="58" rx="28" className="outdoor muted-space" />
+        <g className="selected-space-shape">
+          <rect x="175" y="155" width="130" height="84" rx="8" />
+          <rect x="168" y="148" width="14" height="14" />
+          <rect x="298" y="148" width="14" height="14" />
+          <rect x="298" y="232" width="14" height="14" />
+          <rect x="168" y="232" width="14" height="14" />
+        </g>
+        <path d="M175 255 H305" className="move-guide" />
         <text x="240" y="201">Engineering</text>
         <text x="436" y="168">Library</text>
         <text x="308" y="350">Lab Annex</text>
         <text x="518" y="346" className="outdoor-label">Court A</text>
       </svg>
       <div className="floating-toolbar">
-        <button className="active" type="button">Buildings</button>
-        <button type="button">Spaces</button>
-        <button type="button">POIs</button>
+        <button className="active" type="button">Draw footprint</button>
+        <button className="active" type="button">Move</button>
+        <button type="button">Resize</button>
+        <button type="button">Validate</button>
       </div>
     </section>
   );
@@ -632,7 +792,7 @@ function CampusSpacesMap() {
 function SelectFloorPanel() {
   return (
     <div className="form-stack">
-      <label>Building <input defaultValue="Engineering Building" /></label>
+      <label>Campus space <input defaultValue="Engineering Building" /></label>
       <label>Floor label <input defaultValue="Level 2" /></label>
       <label>Footprint source <input defaultValue="Existing building footprint" /></label>
     </div>
@@ -658,7 +818,7 @@ function ConfigurePanel() {
     <div className="card-list">
       <div className="inline-form-title">
         <strong>Room definition form</strong>
-        <span>Define rooms and labels on top of the aligned floor image.</span>
+        <span>Define rooms and labels on top of the aligned space plan image.</span>
       </div>
       <div className="card-list">
         <article className="compact-card"><span>C201 Seminar</span><Badge tone="good">Ready</Badge></article>
@@ -676,7 +836,7 @@ function ReviewPanel() {
     <div className="task-list">
       <Task title="One room is missing capacity" label="Warning" urgent />
       <Task title="All rooms are inside the footprint" label="Valid" />
-      <Task title="Floor image is aligned" label="Ready" />
+      <Task title="Space plan image is aligned" label="Ready" />
     </div>
   );
 }
@@ -685,8 +845,8 @@ function PublishPanel() {
   return (
     <div className="publish-card">
       <strong>Ready to publish</strong>
-      <p>This floor will become available for room booking after publication.</p>
-      <button className="primary-action" type="button">Publish floor</button>
+      <p>This configured space will become available for room booking after publication.</p>
+      <button className="primary-action" type="button">Publish space</button>
     </div>
   );
 }
