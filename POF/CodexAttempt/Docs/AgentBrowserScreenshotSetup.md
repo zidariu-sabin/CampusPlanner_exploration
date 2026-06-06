@@ -122,7 +122,7 @@ Do not commit temporary screenshots unless they are intentionally added as docum
 
 Mapbox does not render:
 
-- Check that `mapboxAccessToken` is populated.
+- Check that `MAPBOX_ACCESS_TOKEN` is populated in `apps/web/.env`.
 - Check browser console errors for token, style URL, or network failures.
 - Confirm the selected style URL is valid for the token.
 
@@ -145,4 +145,3 @@ Agent-browser commands fail:
 New skills do not appear:
 
 - Restart Codex. Skill discovery happens at session startup.
-

@@ -18,10 +18,10 @@ agent-browser install
 
 Only run those commands after explicit approval.
 
-Mapbox checks require a valid `mapboxAccessToken` in:
+Mapbox checks require a valid `MAPBOX_ACCESS_TOKEN` in:
 
 ```text
-apps/web/src/environments/environment.ts
+apps/web/.env
 ```
 
 ## Quick Checks
@@ -43,4 +43,3 @@ tmp/visual-qa/
 ```
 
 Keep those screenshots out of commits unless they are deliberately used as docs or fixtures.
-

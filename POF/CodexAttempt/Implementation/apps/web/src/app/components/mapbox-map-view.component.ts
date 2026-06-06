@@ -51,7 +51,7 @@ const DEFAULT_STYLE_KEY =
     <section class="mapbox-view">
       @if (!hasMapboxToken) {
         <p class="message error">
-          Mapbox is not configured. Set environment.mapboxAccessToken to enable the map view.
+          Mapbox is not configured. Set MAPBOX_ACCESS_TOKEN in apps/web/.env to enable the map view.
         </p>
       } @else {
         <div class="view-controls">

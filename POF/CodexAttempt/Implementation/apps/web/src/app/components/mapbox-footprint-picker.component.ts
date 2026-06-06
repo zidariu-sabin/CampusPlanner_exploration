@@ -67,7 +67,7 @@ const DEFAULT_STYLE_KEY =
 
       @if (!hasMapboxToken) {
         <p class="message error">
-          Mapbox is not configured. Set environment.mapboxAccessToken to enable the map picker.
+          Mapbox is not configured. Set MAPBOX_ACCESS_TOKEN in apps/web/.env to enable the map picker.
         </p>
       } @else {
         <div class="mapbox-actions">
