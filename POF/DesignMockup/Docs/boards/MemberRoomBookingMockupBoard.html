@@ -1,0 +1,1001 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Campus Planner Member Booking Mockup Board</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f8;
+      --panel: #ffffff;
+      --panel-soft: #f0f3f4;
+      --ink: #172026;
+      --muted: #68747d;
+      --line: #dce2e5;
+      --strong: #0f3d3e;
+      --strong-2: #14585a;
+      --accent: #d97706;
+      --accent-soft: #fff7e8;
+      --green: #0f766e;
+      --red: #b42318;
+      --blue: #2563eb;
+      --shadow: 0 18px 55px rgba(20, 31, 36, 0.1);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    .board {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .board-header {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--strong-2);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      font-size: clamp(30px, 4vw, 54px);
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+    }
+
+    .intro {
+      max-width: 880px;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 16px;
+    }
+
+    .screen-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px;
+    }
+
+    .screen {
+      min-height: 760px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .screen-title {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      background: #fbfcfc;
+    }
+
+    .screen-title h2 {
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .app-frame {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: #eef2f3;
+    }
+
+    .topbar {
+      min-height: 66px;
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 14px;
+      align-items: center;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: var(--strong);
+      color: white;
+      font-weight: 900;
+    }
+
+    .brand strong,
+    .panel-title strong {
+      display: block;
+      line-height: 1.1;
+    }
+
+    .brand span,
+    .panel-title span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .search {
+      min-width: 235px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--muted);
+      background: #f8faf9;
+    }
+
+    .user-chip {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 999px;
+      padding: 7px 11px 7px 7px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #dbeafe;
+      color: #1e40af;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .content {
+      min-height: 0;
+      padding: 18px;
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 310px;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .side-left {
+      grid-template-columns: 285px minmax(0, 1fr);
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .panel-pad {
+      padding: 16px;
+    }
+
+    .panel-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: #fbfcfc;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 28px;
+      letter-spacing: -0.04em;
+    }
+
+    .rows,
+    .stack,
+    .filters {
+      display: grid;
+      gap: 10px;
+    }
+
+    .row,
+    .meeting-card,
+    .room-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+      display: grid;
+      gap: 10px;
+    }
+
+    .row {
+      grid-template-columns: 1fr auto;
+      align-items: center;
+    }
+
+    .meeting-card {
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+    }
+
+    .time-block {
+      min-width: 72px;
+      border-radius: 8px;
+      padding: 9px;
+      text-align: center;
+      background: #e7f7f3;
+      color: var(--green);
+      font-weight: 900;
+      font-size: 13px;
+    }
+
+    .time-block.warn {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .status-line {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .pill.good {
+      background: #e7f7f3;
+      color: var(--green);
+    }
+
+    .pill.warn {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .pill.blue {
+      background: #dbeafe;
+      color: var(--blue);
+    }
+
+    .button,
+    .ghost-button {
+      border: 1px solid var(--strong);
+      background: var(--strong);
+      color: #fff;
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 12px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .ghost-button {
+      background: #fff;
+      color: var(--strong);
+      border-color: var(--line);
+    }
+
+    .map {
+      min-height: 455px;
+      background:
+        linear-gradient(90deg, rgba(15, 61, 62, 0.08) 1px, transparent 1px),
+        linear-gradient(rgba(15, 61, 62, 0.08) 1px, transparent 1px),
+        #f8faf9;
+      background-size: 28px 28px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .map svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .map-tools {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .floating-bar,
+    .floor-stack {
+      pointer-events: auto;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 8px 30px rgba(20, 31, 36, 0.09);
+    }
+
+    .floor-stack {
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .mini {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      color: var(--muted);
+    }
+
+    .mini.active {
+      background: var(--strong);
+      color: #fff;
+      border-color: var(--strong);
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    input,
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--ink);
+      background: #fff;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--line);
+      padding: 10px 10px 0;
+      background: #fff;
+    }
+
+    .tab {
+      border: 1px solid transparent;
+      border-bottom: 0;
+      border-radius: 8px 8px 0 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .tab.active {
+      background: #e7f7f3;
+      color: var(--green);
+      border-color: #b7ded6;
+    }
+
+    .slot-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .slot {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 6px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 850;
+      background: #fff;
+    }
+
+    .slot.active {
+      background: var(--strong);
+      color: #fff;
+      border-color: var(--strong);
+    }
+
+    .slot.busy {
+      color: #9aa3a8;
+      background: #f0f3f4;
+      text-decoration: line-through;
+    }
+
+    .calendar-strip {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+    }
+
+    .day {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+      text-align: center;
+      display: grid;
+      gap: 4px;
+    }
+
+    .day span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .day strong {
+      font-size: 20px;
+    }
+
+    .day.active {
+      border-color: var(--strong);
+      background: #e7f7f3;
+    }
+
+    .room-card {
+      grid-template-columns: 1fr auto;
+      align-items: center;
+    }
+
+    .route-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfcfc;
+      display: grid;
+      gap: 9px;
+    }
+
+    .route-step {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 9px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .step-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--strong);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .summary-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfc;
+      padding: 14px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    .summary-row span {
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    @media (max-width: 1100px) {
+      .screen-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .board {
+        padding: 14px;
+      }
+
+      .screen {
+        min-height: auto;
+      }
+
+      .topbar,
+      .split,
+      .side-left {
+        grid-template-columns: 1fr;
+      }
+
+      .metric-grid,
+      .calendar-strip {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .meeting-card,
+      .room-card {
+        grid-template-columns: 1fr;
+      }
+
+      .search {
+        min-width: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <header class="board-header">
+      <p class="eyebrow">Member mockup series</p>
+      <h1>Room booking user view</h1>
+      <p class="intro">
+        Four static screens for a normal member account with limited access: dashboard, campus map, available room search,
+        and meeting booking detail. The member can see planned meetings, find rooms on the map, and organize a meeting in
+        an available campus space.
+      </p>
+    </header>
+
+    <section class="screen-grid">
+      <article class="screen">
+        <div class="screen-title">
+          <h2>01 Member Dashboard</h2>
+          <span class="tag">Bookings only</span>
+        </div>
+        <div class="app-frame">
+          <header class="topbar">
+            <div class="brand">
+              <div class="brand-mark">CP</div>
+              <div>
+                <strong>Campus Planner</strong>
+                <span>Member workspace</span>
+              </div>
+            </div>
+            <div class="search">Search my meetings or rooms...</div>
+            <div class="user-chip"><span class="avatar">IM</span> Ioana</div>
+          </header>
+          <div class="content">
+            <section class="metric-grid">
+              <div class="metric"><span>Today</span><strong>3</strong></div>
+              <div class="metric"><span>This week</span><strong>9</strong></div>
+              <div class="metric"><span>My bookings</span><strong>4</strong></div>
+              <div class="metric"><span>Next starts in</span><strong>25m</strong></div>
+            </section>
+            <section class="split">
+              <div class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">
+                    <strong>Upcoming meetings</strong>
+                    <span>Where to go and when</span>
+                  </div>
+                  <button class="button">Book a room</button>
+                </div>
+                <div class="panel-pad stack">
+                  <div class="meeting-card">
+                    <div class="time-block">10:00</div>
+                    <div>
+                      <strong>Licenta planning review</strong>
+                      <div class="status-line">
+                        <span class="pill blue">Engineering C203</span>
+                        <span class="pill">Level 2</span>
+                        <span class="pill good">Booked by me</span>
+                      </div>
+                    </div>
+                    <button class="ghost-button">Open route</button>
+                  </div>
+                  <div class="meeting-card">
+                    <div class="time-block warn">12:30</div>
+                    <div>
+                      <strong>Project sync</strong>
+                      <div class="status-line">
+                        <span class="pill blue">Library L104</span>
+                        <span class="pill">Main Campus</span>
+                        <span class="pill">Invited</span>
+                      </div>
+                    </div>
+                    <button class="ghost-button">Details</button>
+                  </div>
+                  <div class="meeting-card">
+                    <div class="time-block">15:00</div>
+                    <div>
+                      <strong>Architecture workshop</strong>
+                      <div class="status-line">
+                        <span class="pill blue">Innovation Hub H210</span>
+                        <span class="pill">8 seats</span>
+                        <span class="pill">Hybrid</span>
+                      </div>
+                    </div>
+                    <button class="ghost-button">Open route</button>
+                  </div>
+                </div>
+              </div>
+              <aside class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">
+                    <strong>Next meeting route</strong>
+                    <span>Engineering Building C203</span>
+                  </div>
+                </div>
+                <div class="panel-pad stack">
+                  <div class="route-card">
+                    <div class="route-step"><span class="step-dot">1</span><span>Enter Main Campus through North Gate.</span></div>
+                    <div class="route-step"><span class="step-dot">2</span><span>Walk to Engineering Building, east entrance.</span></div>
+                    <div class="route-step"><span class="step-dot">3</span><span>Take stairs or elevator to Level 2.</span></div>
+                    <div class="route-step"><span class="step-dot">4</span><span>Room C203 is on the right side of Corridor C.</span></div>
+                  </div>
+                  <button class="button">Open in map view</button>
+                </div>
+              </aside>
+            </section>
+          </div>
+        </div>
+      </article>
+
+      <article class="screen">
+        <div class="screen-title">
+          <h2>02 Campus Map View</h2>
+          <span class="tag">Find a campus space</span>
+        </div>
+        <div class="app-frame">
+          <header class="topbar">
+            <div class="brand">
+              <div class="brand-mark">MP</div>
+              <div>
+                <strong>Main Campus</strong>
+                <span>Buildings, rooms, and bookable spaces</span>
+              </div>
+            </div>
+            <div class="search">Find room, building, projector...</div>
+            <div class="user-chip"><span class="avatar">IM</span> Member</div>
+          </header>
+          <div class="content split side-left">
+            <aside class="panel">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <strong>Map filters</strong>
+                  <span>Member-visible spaces</span>
+                </div>
+              </div>
+              <div class="panel-pad filters">
+                <label>Campus
+                  <select>
+                    <option>Main Campus</option>
+                  </select>
+                </label>
+                <label>Need
+                  <select>
+                    <option>Meeting room</option>
+                  </select>
+                </label>
+                <label>Capacity
+                  <select>
+                    <option>6 or more people</option>
+                  </select>
+                </label>
+                <div class="row"><span>Available now</span><span class="pill good">12 rooms</span></div>
+                <div class="row"><span>Projector</span><span class="pill">7 rooms</span></div>
+                <div class="row"><span>Whiteboard</span><span class="pill">10 rooms</span></div>
+                <button class="button">Show available rooms</button>
+              </div>
+            </aside>
+            <section class="panel map">
+              <svg viewBox="0 0 700 520" aria-label="member campus map mockup">
+                <path d="M74 418 L116 112 L615 76 L660 405 L414 476 Z" fill="#e7f7f3" stroke="#0f766e" stroke-width="4"/>
+                <path d="M95 395 C190 320 236 324 309 250 C394 166 482 140 620 95" fill="none" stroke="#a7b5ba" stroke-width="28" stroke-linecap="round"/>
+                <rect x="165" y="150" width="140" height="88" rx="8" fill="#ffffff" stroke="#0f3d3e" stroke-width="3"/>
+                <rect x="366" y="116" width="144" height="94" rx="8" fill="#ffffff" stroke="#0f3d3e" stroke-width="3"/>
+                <rect x="228" y="306" width="158" height="76" rx="8" fill="#ffffff" stroke="#0f3d3e" stroke-width="3"/>
+                <rect x="472" y="310" width="96" height="60" rx="28" fill="#fff7e8" stroke="#d97706" stroke-width="3"/>
+                <circle cx="236" cy="150" r="12" fill="#0f766e"/>
+                <circle cx="436" cy="116" r="12" fill="#0f766e"/>
+                <circle cx="308" cy="306" r="12" fill="#d97706"/>
+                <text x="235" y="200" text-anchor="middle" font-size="17" font-weight="850" fill="#172026">Engineering</text>
+                <text x="438" y="168" text-anchor="middle" font-size="17" font-weight="850" fill="#172026">Library</text>
+                <text x="307" y="352" text-anchor="middle" font-size="17" font-weight="850" fill="#172026">Innovation</text>
+                <text x="520" y="346" text-anchor="middle" font-size="14" font-weight="850" fill="#92400e">Court A</text>
+              </svg>
+              <div class="map-tools">
+                <div class="floating-bar">
+                  <button class="mini active">All</button>
+                  <button class="mini">Now</button>
+                  <button class="mini">Fav</button>
+                </div>
+                <div class="floating-bar"><span class="pill good">12 available spaces</span></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </article>
+
+      <article class="screen">
+        <div class="screen-title">
+          <h2>03 Available Room Search</h2>
+          <span class="tag">Choose room</span>
+        </div>
+        <div class="app-frame">
+          <header class="topbar">
+            <div class="brand">
+              <div class="brand-mark">BK</div>
+              <div>
+                <strong>Organize a meeting</strong>
+                <span>Find an available campus space</span>
+              </div>
+            </div>
+            <button class="ghost-button">Cancel</button>
+            <button class="button">Continue</button>
+          </header>
+          <div class="content">
+            <section class="calendar-strip">
+              <div class="day"><span>Mon</span><strong>8</strong><small>6 rooms</small></div>
+              <div class="day active"><span>Tue</span><strong>9</strong><small>12 rooms</small></div>
+              <div class="day"><span>Wed</span><strong>10</strong><small>8 rooms</small></div>
+              <div class="day"><span>Thu</span><strong>11</strong><small>3 rooms</small></div>
+              <div class="day"><span>Fri</span><strong>12</strong><small>9 rooms</small></div>
+            </section>
+            <section class="split">
+              <div class="panel">
+                <div class="tabs">
+                  <button class="tab active">Recommended</button>
+                  <button class="tab">Nearest</button>
+                  <button class="tab">Largest</button>
+                </div>
+                <div class="panel-pad stack">
+                  <div class="form-grid">
+                    <label>Meeting title <input value="Licenta planning review"></label>
+                    <label>Time <input value="Tuesday, June 9, 11:00 - 12:00"></label>
+                    <label>People <input value="6 participants"></label>
+                  </div>
+                  <div class="room-card">
+                    <div>
+                      <strong>C203 Seminar Room</strong>
+                      <div class="status-line">
+                        <span class="pill good">Available 11:00</span>
+                        <span class="pill">8 seats</span>
+                        <span class="pill">Projector</span>
+                        <span class="pill blue">3 min walk</span>
+                      </div>
+                    </div>
+                    <button class="button">Select</button>
+                  </div>
+                  <div class="room-card">
+                    <div>
+                      <strong>L104 Collaboration Room</strong>
+                      <div class="status-line">
+                        <span class="pill good">Available 11:00</span>
+                        <span class="pill">6 seats</span>
+                        <span class="pill">Whiteboard</span>
+                        <span class="pill blue">7 min walk</span>
+                      </div>
+                    </div>
+                    <button class="ghost-button">Select</button>
+                  </div>
+                  <div class="room-card">
+                    <div>
+                      <strong>H210 Workshop Room</strong>
+                      <div class="status-line">
+                        <span class="pill warn">Available 11:30</span>
+                        <span class="pill">14 seats</span>
+                        <span class="pill">Hybrid setup</span>
+                        <span class="pill blue">5 min walk</span>
+                      </div>
+                    </div>
+                    <button class="ghost-button">Select</button>
+                  </div>
+                </div>
+              </div>
+              <aside class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">
+                    <strong>Selected slot</strong>
+                    <span>C203 Seminar Room</span>
+                  </div>
+                </div>
+                <div class="panel-pad form-grid">
+                  <div class="slot-grid">
+                    <div class="slot">09:00</div>
+                    <div class="slot busy">10:00</div>
+                    <div class="slot active">11:00</div>
+                    <div class="slot">12:00</div>
+                    <div class="slot busy">13:00</div>
+                    <div class="slot">14:00</div>
+                  </div>
+                  <div class="summary-box">
+                    <div class="summary-row"><span>Room</span><strong>C203 Seminar</strong></div>
+                    <div class="summary-row"><span>Location</span><strong>Engineering, Level 2</strong></div>
+                    <div class="summary-row"><span>Capacity</span><strong>8 people</strong></div>
+                    <div class="summary-row"><span>Features</span><strong>Projector, board</strong></div>
+                  </div>
+                  <button class="button">Use this room</button>
+                </div>
+              </aside>
+            </section>
+          </div>
+        </div>
+      </article>
+
+      <article class="screen">
+        <div class="screen-title">
+          <h2>04 Booking Detail And Route</h2>
+          <span class="tag">Confirmed meeting</span>
+        </div>
+        <div class="app-frame">
+          <header class="topbar">
+            <div class="brand">
+              <div class="brand-mark">OK</div>
+              <div>
+                <strong>Licenta planning review</strong>
+                <span>Tuesday, June 9, 11:00 - 12:00</span>
+              </div>
+            </div>
+            <button class="ghost-button">Edit booking</button>
+            <button class="button">Share invite</button>
+          </header>
+          <div class="content split">
+            <section class="panel map">
+              <svg viewBox="0 0 700 500" aria-label="confirmed booking route map">
+                <path d="M90 100 H610 V395 H455 V445 H90 Z" fill="#f8faf9" stroke="#0f3d3e" stroke-width="4"/>
+                <path d="M90 190 H610 M90 295 H610 M230 100 V445 M380 100 V395 M515 100 V395" stroke="#c8d2d6" stroke-width="3"/>
+                <rect x="90" y="295" width="140" height="150" fill="#ffffff" stroke="#c8d2d6" stroke-width="2"/>
+                <rect x="230" y="295" width="150" height="150" fill="#ffffff" stroke="#c8d2d6" stroke-width="2"/>
+                <rect x="380" y="100" width="135" height="90" fill="#ffffff" stroke="#c8d2d6" stroke-width="2"/>
+                <rect x="392" y="112" width="110" height="66" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="4"/>
+                <path d="M145 345 H296 V320 H448 V178" fill="none" stroke="#2563eb" stroke-width="6" stroke-linecap="round" stroke-dasharray="12 9"/>
+                <circle cx="145" cy="345" r="10" fill="#2563eb"/>
+                <circle cx="448" cy="178" r="10" fill="#2563eb"/>
+                <text x="159" y="374" font-size="14" font-weight="900" fill="#2563eb">You are here</text>
+                <text x="447" y="151" text-anchor="middle" font-size="15" font-weight="900">C203</text>
+              </svg>
+              <div class="map-tools">
+                <div class="floor-stack">
+                  <button class="mini">3</button>
+                  <button class="mini active">2</button>
+                  <button class="mini">1</button>
+                </div>
+                <div class="floating-bar"><span class="pill blue">3 minute route</span></div>
+              </div>
+            </section>
+            <aside class="panel">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <strong>Booking summary</strong>
+                  <span>Visible to meeting participants</span>
+                </div>
+              </div>
+              <div class="panel-pad stack">
+                <div class="summary-box">
+                  <div class="summary-row"><span>Status</span><strong>Confirmed</strong></div>
+                  <div class="summary-row"><span>Location</span><strong>Engineering C203</strong></div>
+                  <div class="summary-row"><span>Floor</span><strong>Level 2, Corridor C</strong></div>
+                  <div class="summary-row"><span>Organizer</span><strong>Ioana Marinescu</strong></div>
+                  <div class="summary-row"><span>Guests</span><strong>Alice, Bob, Charlie</strong></div>
+                </div>
+                <div class="route-card">
+                  <div class="route-step"><span class="step-dot">1</span><span>Start from Engineering east entrance.</span></div>
+                  <div class="route-step"><span class="step-dot">2</span><span>Go straight to Corridor C.</span></div>
+                  <div class="route-step"><span class="step-dot">3</span><span>Turn right after the elevator lobby.</span></div>
+                  <div class="route-step"><span class="step-dot">4</span><span>C203 is reserved until 12:00.</span></div>
+                </div>
+                <button class="button">Start navigation</button>
+                <button class="ghost-button">Release room</button>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
