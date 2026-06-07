@@ -66,6 +66,23 @@ button {
   align-items: center;
 }
 
+.brand-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.brand-meta-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.brand-meta-row .eyebrow {
+  margin: 0;
+}
+
 .brand-mark {
   width: 42px;
   height: 42px;
@@ -96,6 +113,43 @@ p {
 h1 {
   font-size: 21px;
   letter-spacing: -0.03em;
+}
+
+.role-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.role-toggle button {
+  border: 0;
+  border-radius: 6px;
+  padding: 9px 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.role-toggle button.active {
+  background: var(--strong);
+  color: #fff;
+}
+
+.role-toggle.compact {
+  width: 126px;
+  flex: 0 0 auto;
+  gap: 3px;
+  padding: 3px;
+}
+
+.role-toggle.compact button {
+  padding: 5px 6px;
+  font-size: 10px;
 }
 
 .screen-nav {
@@ -355,7 +409,10 @@ h1 {
 .campus-card,
 .compact-card,
 .task,
-.space-select-card {
+.space-select-card,
+.member-meeting-card,
+.member-room-card,
+.booking-detail-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
@@ -411,6 +468,113 @@ h1 {
   margin-top: 3px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.member-meeting-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  color: var(--ink);
+}
+
+.member-meeting-card h3,
+.member-room-card h3 {
+  font-size: 15px;
+}
+
+.member-meeting-card p,
+.member-room-card p {
+  margin: 3px 0 9px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.meeting-time {
+  min-width: 66px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--green-soft);
+  color: var(--green);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.meeting-time-warn {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.member-meeting-card:hover,
+.member-meeting-card:focus-visible {
+  border-color: var(--green);
+  background: #fbfffe;
+  outline: none;
+}
+
+.as-static-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.member-room-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.route-steps {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.route-step {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.route-step span {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--strong);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.route-step p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.booking-detail-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.booking-detail-card div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 13px;
+}
+
+.booking-detail-card span {
+  color: var(--muted);
+  font-weight: 850;
 }
 
 .task span:first-child {
@@ -595,6 +759,16 @@ svg text {
 .location-dot,
 .transform-handles circle {
   fill: var(--blue);
+}
+
+.availability-dot {
+  fill: var(--green);
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+.availability-dot.warn {
+  fill: var(--amber);
 }
 
 .transform-handles path {
@@ -901,6 +1075,11 @@ textarea {
   }
 
   .table-row {
+    grid-template-columns: 1fr;
+  }
+
+  .member-meeting-card,
+  .member-room-card {
     grid-template-columns: 1fr;
   }
 }

@@ -99,6 +99,49 @@ const bookingSlots = [
   { time: '16:00', state: 'free' },
 ];
 
+const memberMeetings = [
+  {
+    time: '10:00',
+    title: 'Licenta planning review',
+    location: 'Engineering C203',
+    details: 'Level 2 · 8 seats · Booked by me',
+    tone: 'good',
+  },
+  {
+    time: '12:30',
+    title: 'Project sync',
+    location: 'Library L104',
+    details: 'Main Campus · Invited',
+    tone: 'warn',
+  },
+  {
+    time: '15:00',
+    title: 'Architecture workshop',
+    location: 'Innovation Hub H210',
+    details: 'Hybrid room · 14 seats',
+    tone: 'good',
+  },
+];
+
+const memberRooms = [
+  {
+    name: 'C203 Seminar Room',
+    location: 'Engineering · Level 2',
+    details: ['Available 11:00', '8 seats', 'Projector', '3 min walk'],
+    selected: true,
+  },
+  {
+    name: 'L104 Collaboration Room',
+    location: 'Library · Level 1',
+    details: ['Available 11:00', '6 seats', 'Whiteboard', '7 min walk'],
+  },
+  {
+    name: 'H210 Workshop Room',
+    location: 'Innovation Hub · Level 2',
+    details: ['Available 11:30', '14 seats', 'Hybrid setup', '5 min walk'],
+  },
+];
+
 const users = [
   { name: 'Ana Marinescu', role: 'Admin', status: 'Active' },
   { name: 'Mihai Pop', role: 'Editor', status: 'Active' },
@@ -110,44 +153,101 @@ const screens = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'campus', label: 'Campus Configuration' },
   { id: 'import', label: 'Space configuration' },
-  { id: 'booking', label: 'Room Booking' },
+  {
+    id: 'booking',
+    label: 'Room Booking',
+    children: [
+      { id: 'booking', label: 'Book room' },
+      { id: 'booking-detail', label: 'Booking detail' },
+    ],
+  },
   { id: 'settings', label: 'Organization settings' },
 ];
 
+const memberScreens = [
+  { id: 'member-dashboard', label: 'Dashboard' },
+  { id: 'member-map', label: 'Map View' },
+  {
+    id: 'member-booking',
+    label: 'Room Booking',
+    children: [
+      { id: 'member-booking', label: 'Book room' },
+      { id: 'member-booking-detail', label: 'Booking detail' },
+    ],
+  },
+];
+
 function App() {
+  const [activeRole, setActiveRole] = useState('admin');
   const [activeScreen, setActiveScreen] = useState('dashboard');
   const [activeCampusStep, setActiveCampusStep] = useState(0);
   const [activeCampusSetupStep, setActiveCampusSetupStep] = useState(0);
   const [activeImportStep, setActiveImportStep] = useState(1);
+  const visibleScreens = activeRole === 'admin' ? screens : memberScreens;
 
   const selectedScreen = useMemo(
-    () => screens.find((screen) => screen.id === activeScreen),
-    [activeScreen],
+    () => (
+      visibleScreens.find((screen) => screen.id === activeScreen)
+      ?? visibleScreens.flatMap((screen) => screen.children ?? []).find((screen) => screen.id === activeScreen)
+      ?? visibleScreens[0]
+    ),
+    [activeScreen, visibleScreens],
   );
+
+  function handleRoleChange(role) {
+    setActiveRole(role);
+    if (role === 'member') {
+      setActiveScreen('member-dashboard');
+    } else {
+      setActiveScreen('dashboard');
+    }
+  }
 
   return (
     <div className="app">
       <aside className="sidebar">
         <div className="brand-block">
           <div className="brand-mark">CP</div>
-          <div>
-            <p className="eyebrow">Design mockup</p>
+          <div className="brand-copy">
+            <div className="brand-meta-row">
+              <p className="eyebrow">Design mockup</p>
+              <div className="role-toggle compact" aria-label="View as">
+                <button
+                  className={activeRole === 'admin' ? 'active' : ''}
+                  type="button"
+                  onClick={() => handleRoleChange('admin')}
+                >
+                  Admin
+                </button>
+                <button
+                  className={activeRole === 'member' ? 'active' : ''}
+                  type="button"
+                  onClick={() => handleRoleChange('member')}
+                >
+                  Member
+                </button>
+              </div>
+            </div>
             <h1>Campus Planner</h1>
           </div>
         </div>
 
         <nav className="screen-nav" aria-label="Mockup screens">
-          {screens.map((screen, index) => (
+          {visibleScreens.map((screen, index) => (
             <React.Fragment key={screen.id}>
               <button
-                className={screen.id === activeScreen ? 'active' : ''}
+                className={
+                  screen.id === activeScreen || screen.children?.some((child) => child.id === activeScreen)
+                    ? 'active'
+                    : ''
+                }
                 type="button"
                 onClick={() => setActiveScreen(screen.id)}
               >
                 <span>{String(index + 1).padStart(2, '0')}</span>
                 {screen.label}
               </button>
-              {screen.id === 'campus' && (
+              {activeRole === 'admin' && screen.id === 'campus' && (
                 <div className="child-nav" aria-label="Campus configuration sections">
                   {campusSteps.map((step, stepIndex) => (
                     <button
@@ -170,6 +270,21 @@ function App() {
                   ))}
                 </div>
               )}
+              {screen.children && screen.id !== 'campus' && (
+                <div className="child-nav" aria-label={`${screen.label} sections`}>
+                  {screen.children.map((child, childIndex) => (
+                    <button
+                      key={child.id}
+                      className={activeScreen === child.id ? 'active' : ''}
+                      type="button"
+                      onClick={() => setActiveScreen(child.id)}
+                    >
+                      <span>{index + 1}.{childIndex + 1}</span>
+                      {child.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </React.Fragment>
           ))}
         </nav>
@@ -183,17 +298,17 @@ function App() {
       <main className="workspace">
         <header className="workspace-header">
           <div>
-            <p className="eyebrow">Current screen</p>
+            <p className="eyebrow">Current screen · {activeRole} view</p>
             <h2>{selectedScreen.label}</h2>
           </div>
           <div className="tenant-chip">
-            <span className="avatar">AM</span>
-            North Campus Group
+            <span className="avatar">{activeRole === 'admin' ? 'AM' : 'IM'}</span>
+            {activeRole === 'admin' ? 'North Campus Group' : 'Ioana · Member'}
           </div>
         </header>
 
-        {activeScreen === 'dashboard' && <DashboardScreen onAddCampus={() => setActiveScreen('campus')} />}
-        {activeScreen === 'campus' && (
+        {activeRole === 'admin' && activeScreen === 'dashboard' && <DashboardScreen onAddCampus={() => setActiveScreen('campus')} />}
+        {activeRole === 'admin' && activeScreen === 'campus' && (
           <CampusScreen
             activeStep={activeCampusStep}
             setupStep={activeCampusSetupStep}
@@ -201,11 +316,21 @@ function App() {
             onSetupStepChange={setActiveCampusSetupStep}
           />
         )}
-        {activeScreen === 'import' && (
+        {activeRole === 'admin' && activeScreen === 'import' && (
           <ImportScreen activeStep={activeImportStep} onStepChange={setActiveImportStep} />
         )}
-        {activeScreen === 'booking' && <BookingScreen />}
-        {activeScreen === 'settings' && <SettingsScreen />}
+        {activeRole === 'admin' && activeScreen === 'booking' && <MemberRoomBookingScreen />}
+        {activeRole === 'admin' && activeScreen === 'booking-detail' && <MemberBookingDetailScreen />}
+        {activeRole === 'member' && activeScreen === 'member-dashboard' && (
+          <MemberDashboardScreen
+            onOpenBookingDetail={() => setActiveScreen('member-booking-detail')}
+            onOpenMap={() => setActiveScreen('member-map')}
+          />
+        )}
+        {activeRole === 'member' && activeScreen === 'member-map' && <MemberMapScreen />}
+        {activeRole === 'member' && activeScreen === 'member-booking' && <MemberRoomBookingScreen />}
+        {activeRole === 'member' && activeScreen === 'member-booking-detail' && <MemberBookingDetailScreen />}
+        {activeRole === 'admin' && activeScreen === 'settings' && <SettingsScreen />}
       </main>
     </div>
   );
@@ -348,15 +473,126 @@ function ImportScreen({ activeStep, onStepChange }) {
   );
 }
 
-function BookingScreen() {
+function MemberDashboardScreen({ onOpenBookingDetail, onOpenMap }) {
+  return (
+    <ScreenShell>
+      <section className="metrics-grid">
+        <Metric label="Today" value="3" />
+        <Metric label="This week" value="9" />
+        <Metric label="My bookings" value="4" />
+        <Metric label="Next starts in" value="25m" tone="warn" />
+      </section>
+
+      <section className="two-column">
+        <Panel title="My planned meetings" subtitle="What is planned and where to find it" action="Book a room">
+          <div className="card-list">
+            {memberMeetings.map((meeting) => (
+              <button
+                className="member-meeting-card"
+                key={`${meeting.time}-${meeting.title}`}
+                type="button"
+                onClick={onOpenBookingDetail}
+              >
+                <div className={`meeting-time meeting-time-${meeting.tone}`}>{meeting.time}</div>
+                <div>
+                  <h3>{meeting.title}</h3>
+                  <p>{meeting.location}</p>
+                  <div className="status-row">
+                    {meeting.details.split(' · ').map((detail) => (
+                      <Badge key={detail}>{detail}</Badge>
+                    ))}
+                  </div>
+                </div>
+                <span className="secondary-action as-static-action">Details</span>
+              </button>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel title="Next meeting route" subtitle="Engineering Building C203">
+          <div className="route-steps">
+            <RouteStep number="1">Enter Main Campus through North Gate.</RouteStep>
+            <RouteStep number="2">Walk to Engineering Building, east entrance.</RouteStep>
+            <RouteStep number="3">Take stairs or elevator to Level 2.</RouteStep>
+            <RouteStep number="4">Room C203 is on the right side of Corridor C.</RouteStep>
+          </div>
+          <button className="primary-action" type="button" onClick={onOpenMap}>Open map view</button>
+        </Panel>
+      </section>
+    </ScreenShell>
+  );
+}
+
+function MemberMapScreen() {
+  return (
+    <ScreenShell>
+      <section className="map-layout side-first">
+        <Panel title="Find a campus space" subtitle="Search only member-visible bookable rooms">
+          <div className="form-stack">
+            <label>
+              Campus
+              <input defaultValue="Main Academic Campus" />
+            </label>
+            <label>
+              Need
+              <input defaultValue="Meeting room" />
+            </label>
+            <label>
+              Capacity
+              <input defaultValue="6 or more people" />
+            </label>
+            <div className="task-list">
+              <Task title="Available now" label="12 rooms" />
+              <Task title="Projector" label="7 rooms" />
+              <Task title="Whiteboard" label="10 rooms" />
+            </div>
+          </div>
+        </Panel>
+        <MemberCampusMap />
+      </section>
+    </ScreenShell>
+  );
+}
+
+function MemberRoomBookingScreen() {
   return (
     <ScreenShell>
       <section className="map-layout">
-        <BookingMap />
+        <Panel title="Available rooms" subtitle="Tuesday, June 9 · 11:00 - 12:00">
+          <div className="form-stack">
+            <label>
+              Meeting title
+              <input defaultValue="Licenta planning review" />
+            </label>
+            <label>
+              Participants
+              <input defaultValue="Alice, Bob, Charlie" />
+            </label>
+            <div className="card-list">
+              {memberRooms.map((room) => (
+                <article className="member-room-card" key={room.name}>
+                  <div>
+                    <h3>{room.name}</h3>
+                    <p>{room.location}</p>
+                    <div className="status-row">
+                      {room.details.map((detail, detailIndex) => (
+                        <Badge key={detail} tone={detailIndex === 0 ? 'good' : 'neutral'}>{detail}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <button className={room.selected ? 'primary-action' : 'secondary-action'} type="button">
+                    {room.selected ? 'Selected' : 'Select'}
+                  </button>
+                </article>
+              ))}
+            </div>
+          </div>
+        </Panel>
+
         <Panel title="Book C203 Seminar Room" subtitle="Engineering Building · Level 2">
           <div className="booking-summary">
             <Badge tone="good">Available at 11:00</Badge>
-            <Badge>24 seats</Badge>
+            <Badge>8 seats</Badge>
             <Badge>Projector</Badge>
           </div>
           <div className="slot-grid">
@@ -366,21 +602,42 @@ function BookingScreen() {
               </button>
             ))}
           </div>
-          <div className="form-stack">
-            <label>
-              Meeting title
-              <input defaultValue="Licenta planning review" />
-            </label>
-            <label>
-              Participants
-              <input defaultValue="Ana, Mihai, Facilities Team" />
-            </label>
-            <label>
-              Notes
-              <textarea defaultValue="Bring latest space configuration samples." />
-            </label>
+          <div className="booking-detail-card">
+            <div><span>Room</span><strong>C203 Seminar</strong></div>
+            <div><span>Floor</span><strong>Level 2, Corridor C</strong></div>
+            <div><span>Organizer</span><strong>Ioana Marinescu</strong></div>
           </div>
           <button className="primary-action" type="button">Confirm booking</button>
+        </Panel>
+      </section>
+    </ScreenShell>
+  );
+}
+
+function MemberBookingDetailScreen() {
+  return (
+    <ScreenShell>
+      <section className="map-layout">
+        <BookingMap />
+        <Panel title="Licenta planning review" subtitle="Tuesday, June 9 · 11:00 - 12:00">
+          <div className="booking-summary">
+            <Badge tone="good">Confirmed</Badge>
+            <Badge>Engineering C203</Badge>
+            <Badge>Level 2</Badge>
+          </div>
+          <div className="booking-detail-card">
+            <div><span>Room</span><strong>C203 Seminar</strong></div>
+            <div><span>Floor</span><strong>Level 2, Corridor C</strong></div>
+            <div><span>Organizer</span><strong>Ioana Marinescu</strong></div>
+            <div><span>Guests</span><strong>Alice, Bob, Charlie</strong></div>
+          </div>
+          <div className="route-steps">
+            <RouteStep number="1">Start from Engineering east entrance.</RouteStep>
+            <RouteStep number="2">Go straight to Corridor C.</RouteStep>
+            <RouteStep number="3">Turn right after the elevator lobby.</RouteStep>
+            <RouteStep number="4">C203 is reserved until 12:00.</RouteStep>
+          </div>
+          <button className="primary-action" type="button">Start navigation</button>
         </Panel>
       </section>
     </ScreenShell>
@@ -473,6 +730,42 @@ function Task({ title, label, urgent }) {
       <span>{title}</span>
       <Badge tone={urgent ? 'warn' : 'neutral'}>{label}</Badge>
     </article>
+  );
+}
+
+function RouteStep({ number, children }) {
+  return (
+    <div className="route-step">
+      <span>{number}</span>
+      <p>{children}</p>
+    </div>
+  );
+}
+
+function MemberCampusMap() {
+  return (
+    <section className="map-panel">
+      <svg viewBox="0 0 700 520" role="img" aria-label="Member campus map">
+        <path d="M74 418 L116 112 L615 76 L660 405 L414 476 Z" className="campus-boundary" />
+        <path d="M95 395 C190 320 236 324 309 250 C394 166 482 140 620 95" className="road" />
+        <rect x="165" y="150" width="140" height="88" rx="8" className="building" />
+        <rect x="366" y="116" width="144" height="94" rx="8" className="building" />
+        <rect x="228" y="306" width="158" height="76" rx="8" className="building" />
+        <rect x="472" y="310" width="96" height="60" rx="28" className="outdoor" />
+        <circle cx="236" cy="150" r="12" className="availability-dot" />
+        <circle cx="436" cy="116" r="12" className="availability-dot" />
+        <circle cx="308" cy="306" r="12" className="availability-dot warn" />
+        <text x="235" y="200">Engineering</text>
+        <text x="438" y="168">Library</text>
+        <text x="307" y="352">Innovation</text>
+        <text x="520" y="346" className="outdoor-label">Court A</text>
+      </svg>
+      <div className="floating-toolbar">
+        <button className="active" type="button">All spaces</button>
+        <button type="button">Available now</button>
+        <Badge tone="good">12 available</Badge>
+      </div>
+    </section>
   );
 }
 
