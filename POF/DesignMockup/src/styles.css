@@ -261,6 +261,19 @@ h1 {
   letter-spacing: -0.04em;
 }
 
+.feature-spec-reference {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.feature-spec-reference span {
+  color: var(--strong-2);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
 .tenant-chip {
   display: flex;
   gap: 9px;
@@ -528,6 +541,105 @@ h1 {
   align-items: center;
 }
 
+.map-stage-list {
+  display: grid;
+  gap: 8px;
+}
+
+.selector-label {
+  color: var(--strong-2);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.selection-summary {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfc;
+}
+
+.selection-summary div {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.selection-summary span {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.selection-summary strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-stage-list button {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.map-stage-list button span,
+.floor-selector p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.map-stage-list button.active {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+.floor-selector {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfc;
+}
+
+.floor-selector > div,
+.floor-overlay > div {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.floor-selector button,
+.floor-overlay button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  padding: 7px 9px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.floor-selector button.active,
+.floor-overlay button.active {
+  border-color: var(--strong);
+  background: var(--strong);
+  color: #fff;
+}
+
 .route-steps {
   display: grid;
   gap: 10px;
@@ -626,6 +738,50 @@ h1 {
   object-fit: contain;
 }
 
+.staged-map {
+  transition: background-size 180ms ease;
+}
+
+.staged-map.is-zoomed {
+  background-size: 34px 34px;
+}
+
+.map-layer {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.city-layer {
+  opacity: 0.48;
+}
+
+.campus-detail-layer,
+.room-detail-layer {
+  filter: drop-shadow(0 10px 24px rgba(20, 31, 36, 0.12));
+}
+
+.map-focus-surface {
+  fill: rgba(255, 255, 255, 0.78);
+  stroke: var(--line);
+  stroke-width: 2;
+}
+
+.floor-focus-surface {
+  fill: rgba(255, 255, 255, 0.9);
+  stroke: var(--blue);
+  stroke-width: 2;
+}
+
+.clickable-map-feature {
+  cursor: pointer;
+  outline: none;
+}
+
+.clickable-map-feature:hover .building,
+.clickable-map-feature:focus-visible .building {
+  fill: var(--green-soft);
+  stroke: var(--green);
+}
+
 svg text {
   text-anchor: middle;
   dominant-baseline: middle;
@@ -639,6 +795,48 @@ svg text {
   stroke: #a7b5ba;
   stroke-width: 24;
   stroke-linecap: round;
+}
+
+.city-road {
+  fill: none;
+  stroke: #a7b5ba;
+  stroke-width: 18;
+  stroke-linecap: round;
+}
+
+.city-road.major {
+  stroke-width: 26;
+}
+
+.city-grid-line {
+  fill: none;
+  stroke: #c9d4d8;
+  stroke-width: 5;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.city-block {
+  fill: rgba(255, 255, 255, 0.72);
+  stroke: #d5dee2;
+  stroke-width: 2;
+}
+
+.campus-marker circle {
+  fill: var(--strong);
+  stroke: #fff;
+  stroke-width: 5;
+}
+
+.campus-marker text {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.campus-marker:hover circle,
+.campus-marker:focus-visible circle {
+  fill: var(--green);
 }
 
 .campus-boundary {
@@ -661,6 +859,11 @@ svg text {
 
 .outdoor-label {
   fill: #92400e;
+}
+
+.map-title-label {
+  fill: var(--strong);
+  font-size: 18px;
 }
 
 .muted-space {
@@ -691,6 +894,10 @@ svg text {
   fill: #f8faf9;
   stroke: var(--strong);
   stroke-width: 4;
+}
+
+.selected-floor-footprint {
+  fill: #fff;
 }
 
 .floor-lines,
@@ -807,6 +1014,66 @@ svg text {
   background: var(--strong);
   color: #fff;
   border-color: var(--strong);
+}
+
+.floor-overlay {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  display: grid;
+  gap: 9px;
+  max-width: 230px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 30px rgba(20, 31, 36, 0.09);
+}
+
+.zoom-overlay {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: grid;
+  grid-template-columns: 34px minmax(160px, 1fr) 34px;
+  gap: 8px;
+  align-items: center;
+  max-width: calc(100% - 28px);
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 30px rgba(20, 31, 36, 0.09);
+}
+
+.zoom-overlay button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--strong);
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.zoom-overlay div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.zoom-overlay strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.zoom-overlay span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .step-strip {
