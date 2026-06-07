@@ -2,6 +2,14 @@ import React from 'react';
 import { Badge, Panel, ScreenShell } from '../common/ui';
 import { users } from '../data';
 
+/*
+## Admin Organization Settings
+Tenant-level administration page.
+
+Shows users, roles, access status, private URL, and custom domain state. The
+mockup keeps settings navigation static, but the page establishes where access,
+publishing, domain, branding, and audit controls should live.
+*/
 export function SettingsScreen() {
   return (
     <ScreenShell>

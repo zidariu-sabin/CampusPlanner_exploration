@@ -2,6 +2,14 @@ import React from 'react';
 import { Badge, Panel, ScreenShell } from '../common/ui';
 import { bookingSlots, memberRooms } from '../data';
 
+/*
+## Room Booking
+Shared admin/member page for organizing a meeting in an available room.
+
+Users compare candidate rooms, review capacity/equipment/proximity, choose a
+time slot, and confirm the booking. The mockup focuses on selection states and
+booking context rather than persistence.
+*/
 export function RoomBookingScreen() {
   return (
     <ScreenShell>
