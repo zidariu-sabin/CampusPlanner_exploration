@@ -2,6 +2,15 @@ import React, { useState } from 'react';
 import { Badge, Panel, ScreenShell, Task } from '../common/ui';
 import { memberMapCampuses, memberMapFloors, memberMapSpaces } from '../data';
 
+/*
+## Member Map View
+Hierarchical city -> campus -> space -> floor -> room exploration mockup.
+
+The left selector summarizes the current selection and reveals child entities as
+the user drills down. The canvas keeps parent map context visible while adding
+campus, space, and room layers on top, which represents how Mapbox sources/layers
+should be composed in the real implementation.
+*/
 export function MemberMapViewScreen() {
   const [selectedCampus, setSelectedCampus] = useState(null);
   const [selectedSpace, setSelectedSpace] = useState(null);

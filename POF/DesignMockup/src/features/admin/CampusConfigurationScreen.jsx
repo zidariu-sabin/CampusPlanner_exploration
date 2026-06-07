@@ -2,6 +2,15 @@ import React from 'react';
 import { Badge, Panel, ScreenShell, Task } from '../common/ui';
 import { campusSetupSteps, spaces } from '../data';
 
+/*
+## Admin Campus Configuration
+Admin workflow for defining the outdoor campus model before indoor rooms exist.
+
+The page covers campus footprint definition, cadastral image alignment, and
+space setup for buildings/outdoor resources. It is intentionally split into
+setup steps so the mockup can explain how campus GeoJSON, space GeoJSON, and
+future floor assignment relate to one another.
+*/
 export function CampusConfigurationScreen({ activeStep, setupStep, onOpenSpacesSetup, onSetupStepChange }) {
   return (
     <ScreenShell>

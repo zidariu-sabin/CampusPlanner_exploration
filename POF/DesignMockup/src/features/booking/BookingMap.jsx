@@ -1,6 +1,14 @@
 import React from 'react';
 import { Badge } from '../common/ui';
 
+/*
+## Booking Map
+Small indoor route visualization used by Booking Detail.
+
+Highlights the selected room and a mocked indoor route from an entry/current
+position to the destination room. In the real implementation this should render
+the same room/floor geometry used by the member map view.
+*/
 export function BookingMap() {
   return (
     <section className="map-panel">

@@ -2,6 +2,14 @@ import React from 'react';
 import { Badge, Panel, ScreenShell, Task } from '../common/ui';
 import { floorImportSteps } from '../data';
 
+/*
+## Admin Space Configuration
+Import pipeline for turning a campus space into bookable indoor data.
+
+The flow selects a space/floor, uploads and aligns a floor image, defines room
+polygons, reviews warnings, then publishes the configured space. In a real build
+this would become the source for member map layers and room booking availability.
+*/
 export function SpaceConfigurationScreen({ activeStep, onStepChange }) {
   return (
     <ScreenShell>

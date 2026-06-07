@@ -31,35 +31,35 @@ export const memberScreens = [
 export const featureSpecs = {
   'admin-dashboard': {
     title: 'Admin Dashboard',
-    specPath: 'src/features/specs/admin-dashboard.md',
+    specPath: 'src/features/admin/DashboardScreen.md',
   },
   'admin-campus-configuration': {
     title: 'Campus Configuration',
-    specPath: 'src/features/specs/admin-campus-configuration.md',
+    specPath: 'src/features/admin/CampusConfigurationScreen.md',
   },
   'admin-space-configuration': {
     title: 'Space Configuration',
-    specPath: 'src/features/specs/admin-space-configuration.md',
+    specPath: 'src/features/admin/SpaceConfigurationScreen.md',
   },
   'admin-organization-settings': {
     title: 'Organization Settings',
-    specPath: 'src/features/specs/admin-organization-settings.md',
+    specPath: 'src/features/admin/SettingsScreen.md',
   },
   'member-dashboard': {
     title: 'Member Dashboard',
-    specPath: 'src/features/specs/member-dashboard.md',
+    specPath: 'src/features/member/DashboardScreen.md',
   },
   'member-map-view': {
     title: 'Member Map View',
-    specPath: 'src/features/specs/member-map-view.md',
+    specPath: 'src/features/member/MapViewScreen.md',
   },
   'room-booking': {
     title: 'Room Booking',
-    specPath: 'src/features/specs/room-booking.md',
+    specPath: 'src/features/booking/RoomBookingScreen.md',
   },
   'booking-detail': {
     title: 'Booking Detail',
-    specPath: 'src/features/specs/booking-detail.md',
+    specPath: 'src/features/booking/BookingDetailScreen.md',
   },
 };
 

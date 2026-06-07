@@ -2,6 +2,14 @@ import React from 'react';
 import { Badge, Metric, Panel, ScreenShell, Task } from '../common/ui';
 import { campuses } from '../data';
 
+/*
+## Admin Dashboard
+Operational landing page for tenant administrators.
+
+Shows portfolio metrics, campus publication health, and attention tasks that
+block publishing or tenant readiness. The primary user action in this mockup is
+opening campus configuration through `onAddCampus`.
+*/
 export function AdminDashboardScreen({ onAddCampus }) {
   return (
     <ScreenShell>

@@ -2,6 +2,14 @@ import React from 'react';
 import { Badge, Metric, Panel, RouteStep, ScreenShell } from '../common/ui';
 import { memberMeetings } from '../data';
 
+/*
+## Member Dashboard
+Landing page for a normal member with booking and map access.
+
+It answers: what meetings do I have, where are they, and how do I get there?
+Meeting rows open booking detail, while `Open map view` moves the user into the
+campus/space/floor/room map exploration flow.
+*/
 export function MemberDashboardScreen({ onOpenBookingDetail, onOpenMap }) {
   return (
     <ScreenShell>

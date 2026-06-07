@@ -2,6 +2,13 @@ import React from 'react';
 import { Badge, Panel, RouteStep, ScreenShell } from '../common/ui';
 import { BookingMap } from './BookingMap';
 
+/*
+## Booking Detail
+Shared admin/member detail page for a confirmed meeting.
+
+Shows confirmation state, room/floor metadata, organizer/guests, route map, and
+step-by-step indoor directions. Member dashboard meeting rows navigate here.
+*/
 export function BookingDetailScreen() {
   return (
     <ScreenShell>
