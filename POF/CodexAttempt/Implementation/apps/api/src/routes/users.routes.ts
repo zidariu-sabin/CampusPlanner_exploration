@@ -11,14 +11,12 @@ export const usersRouter = Router();
 usersRouter.get(
   '/',
   authenticate,
-  asyncHandler(async (_request, response) => {
+  asyncHandler(async (request, response) => {
     const users = await AppDataSource.getRepository(UserEntity).find({
-      order: {
-        displayName: 'ASC',
-      },
+      where: { organizationId: request.user!.organizationId },
+      order: { displayName: 'ASC' },
     });
 
     response.json(users.map(toUserSummary));
   }),
 );
-

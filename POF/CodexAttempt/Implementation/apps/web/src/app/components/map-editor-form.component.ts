@@ -6,13 +6,11 @@ import {
   EditableRoomInput,
   EditorRoomModel,
   EditorRoomShape,
+  FloorMapDto,
   GeoJsonPolygon,
   GeoJsonPosition,
-  MapDto,
-  MapSummaryDto,
   createPolygon,
   createRectanglePolygon,
-  getBoundingBox,
   getProjectedBoundingBox,
   polygonContainsPolygon,
   polygonToRoomModel,
@@ -27,6 +25,8 @@ import {
   toBackgroundProcessRequest,
 } from '../core/background-image-editor';
 import { assetUrl } from '../core/api';
+import { CampusesService } from '../core/campuses.service';
+import { FloorsService } from '../core/floors.service';
 import { downloadMapSvg, readBlobAsDataUrl, type ExportableMap } from '../core/map-svg-export';
 import { MapsService } from '../core/maps.service';
 import { ImageManipulationToolsComponent } from './image-manipulation-tools.component';
@@ -75,22 +75,14 @@ export type MapEditorWorkflow = 'map' | 'rooms';
       <section class="grid-2 editor-layout">
         @if (workflow === 'map') {
           <article class="card panel form-panel">
-            <h2>Map settings</h2>
+            <h2>Floor settings</h2>
             <label>Name <input [(ngModel)]="name" /></label>
             <label>Floor label <input [(ngModel)]="floorLabel" /></label>
-            <label>Timezone <input [(ngModel)]="timezone" /></label>
-            <label>
-              Parent map
-              <select
-                [ngModel]="parentMapId() ?? ''"
-                (ngModelChange)="parentMapId.set($event || null)"
-              >
-                <option value="">No parent</option>
-                @for (map of availableParentMaps(); track map.id) {
-                  <option [value]="map.id">{{ map.name }} · {{ map.floorLabel }}</option>
-                }
-              </select>
-            </label>
+            @if (timezoneDisplay()) {
+              <p class="muted timezone-note">
+                Timezone: {{ timezoneDisplay() }} (read-only, derived from the campus)
+              </p>
+            }
             <label>
               Footprint GeoJSON
               <textarea [(ngModel)]="footprintText"></textarea>
@@ -118,9 +110,9 @@ export type MapEditorWorkflow = 'map' | 'rooms';
               <button type="button" class="ghost" (click)="loadSampleFootprint()">
                 Use sample footprint
               </button>
-              <button type="button" (click)="saveMap()">Save map</button>
+              <button type="button" (click)="saveMap()">Save floor</button>
               @if (mapId()) {
-                <a class="button ghost" [routerLink]="['/maps', mapId(), 'edit', 'rooms']">
+                <a class="button ghost" [routerLink]="['/admin/floors', mapId(), 'edit', 'rooms']">
                   Define rooms
                 </a>
               }
@@ -161,7 +153,7 @@ export type MapEditorWorkflow = 'map' | 'rooms';
                   </button>
                 }
               } @else if (mapId()) {
-                <a class="button ghost" [routerLink]="['/maps', mapId(), 'edit']">
+                <a class="button ghost" [routerLink]="['/admin/floors', mapId(), 'edit']">
                   Editor dashboard
                 </a>
               }
@@ -266,12 +258,9 @@ export type MapEditorWorkflow = 'map' | 'rooms';
             <div class="actions top-gap">
               <button type="button" (click)="saveRooms()" [disabled]="!mapId()">Save rooms</button>
               @if (mapId()) {
-                <a class="button ghost" [routerLink]="['/maps', mapId(), 'edit', 'map']">
-                  Configure map
+                <a class="button ghost" [routerLink]="['/admin/floors', mapId(), 'edit', 'map']">
+                  Floor plan & alignment
                 </a>
-                <a class="button ghost" [routerLink]="['/maps', mapId(), 'book']"
-                  >Open booking view</a
-                >
               }
             </div>
           </article>
@@ -298,7 +287,8 @@ export type MapEditorWorkflow = 'map' | 'rooms';
       gap: 1rem;
     }
 
-    .canvas-mode-hint {
+    .canvas-mode-hint,
+    .timezone-note {
       margin: 0;
     }
 
@@ -382,11 +372,12 @@ export type MapEditorWorkflow = 'map' | 'rooms';
 export class MapEditorFormComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly mapsService = inject(MapsService);
+  private readonly floorsService = inject(FloorsService);
+  private readonly campusesService = inject(CampusesService);
 
   protected readonly mapId = signal<string | null>(null);
   protected readonly rooms = signal<EditorRoomModel[]>([]);
   protected readonly selectedRoomId = signal<string | null>(null);
-  protected readonly parentMapId = signal<string | null>(null);
   protected readonly error = signal('');
   protected readonly message = signal('');
   protected readonly canvasMode = signal<CanvasMode>('rooms');
@@ -403,9 +394,15 @@ export class MapEditorFormComponent implements OnInit {
   @Input() embedded = false;
   @Input() workflow: MapEditorWorkflow = 'map';
 
+  /** Building under which a new floor is created (creation flow only). */
+  @Input() buildingId: string | null = null;
+
+  /** Optional campus/place used to seed the initial footprint when creating a floor. */
+  @Input() seedCampusId: string | null = null;
+  @Input() seedPlaceId: string | null = null;
+
   protected name = 'Main Campus Floor';
   protected floorLabel = 'Ground Floor';
-  protected timezone = 'Europe/Bucharest';
   protected footprintText = JSON.stringify(
     createPolygon([
       [23.8295, 44.298],
@@ -424,13 +421,11 @@ export class MapEditorFormComponent implements OnInit {
     cropRect: createDefaultCropRect(this.bounds()),
   });
 
-  private currentMap: MapDto | null = null;
+  private currentMap: FloorMapDto | null = null;
   private backgroundFile: File | null = null;
   private pendingBackgroundUrl: string | null = null;
-  private readonly parentMapOptions = signal<MapSummaryDto[]>([]);
 
   async ngOnInit(): Promise<void> {
-    await this.loadParentMapOptions();
     this.resetBackgroundEdits();
     if (this.workflow === 'rooms') {
       this.canvasMode.set('rooms');
@@ -438,38 +433,39 @@ export class MapEditorFormComponent implements OnInit {
 
     if (this.mapId()) {
       await this.loadMap(this.mapId()!);
+    } else if (this.seedCampusId && this.seedPlaceId) {
+      await this.seedFootprintFromPlace(this.seedCampusId, this.seedPlaceId);
     }
+  }
+
+  protected timezoneDisplay(): string | null {
+    return this.currentMap?.timezone ?? null;
   }
 
   protected headerTitle(): string {
     if (!this.mapId()) {
-      return 'Configure Map';
+      return 'New Floor';
     }
 
     if (this.embedded) {
       return this.name;
     }
 
-    return this.workflow === 'rooms' ? 'Define Rooms' : 'Configure Map';
+    return this.workflow === 'rooms' ? 'Define Rooms' : 'Floor Plan & Alignment';
   }
 
   protected headerSubtitle(): string {
     if (!this.mapId()) {
-      return 'Create the digital map footprint and align the background image before defining rooms.';
+      return 'Create the floor footprint and align the background image before defining rooms.';
     }
 
     if (this.embedded) {
-      return 'Editing form for a child map of the currently opened map.';
+      return 'Editing form for this floor map.';
     }
 
     return this.workflow === 'rooms'
-      ? 'Draw, drag, resize, and save room boundaries over the saved map footprint.'
-      : 'Set the map metadata, footprint GeoJSON, and background image alignment.';
-  }
-
-  protected availableParentMaps(): MapSummaryDto[] {
-    const currentMapId = this.mapId();
-    return this.parentMapOptions().filter((map) => map.id !== currentMapId);
+      ? 'Draw, drag, resize, and save room boundaries over the saved floor footprint.'
+      : 'Set the floor metadata, footprint GeoJSON, and background image alignment.';
   }
 
   protected loadSampleFootprint(): void {
@@ -723,18 +719,21 @@ export class MapEditorFormComponent implements OnInit {
       const payload = {
         name: this.name,
         floorLabel: this.floorLabel,
-        timezone: this.timezone,
-        parentMapId: this.parentMapId(),
         footprintGeoJson: footprint,
       };
 
-      this.currentMap = this.mapId()
-        ? await this.mapsService.update(this.mapId()!, payload)
-        : await this.mapsService.create(payload);
+      if (this.mapId()) {
+        this.currentMap = await this.mapsService.update(this.mapId()!, payload);
+      } else {
+        if (!this.buildingId) {
+          this.error.set('Missing building. Open floor creation from the spaces setup page.');
+          return;
+        }
+
+        this.currentMap = await this.floorsService.createForBuilding(this.buildingId, payload);
+      }
 
       this.mapId.set(this.currentMap.id);
-
-      await this.loadParentMapOptions();
 
       if (this.backgroundFile) {
         this.currentMap = await this.mapsService.uploadBackground(
@@ -746,9 +745,9 @@ export class MapEditorFormComponent implements OnInit {
       }
 
       this.resetBackgroundEdits();
-      this.message.set('Map saved.');
+      this.message.set('Floor saved.');
       if (isNewMap) {
-        await this.router.navigate(['/maps', this.currentMap.id, 'edit', 'map']);
+        await this.router.navigate(['/admin/floors', this.currentMap.id, 'edit', 'rooms']);
       }
     } catch (error) {
       this.error.set(this.extractMessage(error));
@@ -860,8 +859,6 @@ export class MapEditorFormComponent implements OnInit {
       this.backgroundFile = null;
       this.name = this.currentMap.name;
       this.floorLabel = this.currentMap.floorLabel;
-      this.timezone = this.currentMap.timezone;
-      this.parentMapId.set(this.currentMap.parentMapId);
       this.footprintText = JSON.stringify(this.currentMap.footprintGeoJson, null, 2);
       this.rooms.set(
         this.currentMap.rooms.map((room) =>
@@ -879,9 +876,17 @@ export class MapEditorFormComponent implements OnInit {
     }
   }
 
-  private async loadParentMapOptions(): Promise<void> {
+  private async seedFootprintFromPlace(campusId: string, placeId: string): Promise<void> {
     try {
-      this.parentMapOptions.set(await this.mapsService.list());
+      const campus = await this.campusesService.get(campusId);
+      const place = campus.places.find((candidate) => candidate.id === placeId);
+      if (!place) {
+        return;
+      }
+
+      this.footprintText = JSON.stringify(place.footprintGeoJson, null, 2);
+      this.name = `${place.name} Floor`;
+      this.resetBackgroundEdits();
     } catch (error) {
       this.error.set(this.extractMessage(error));
     }
@@ -891,7 +896,7 @@ export class MapEditorFormComponent implements OnInit {
     return {
       name: this.name,
       floorLabel: this.floorLabel,
-      timezone: this.timezone,
+      timezone: this.currentMap?.timezone ?? 'UTC',
       backgroundImageUrl: this.currentMap?.backgroundImageUrl ?? null,
       footprintGeoJson: footprint,
       rooms: this.rooms().map((room, index) => ({

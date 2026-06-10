@@ -2,13 +2,20 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import { authenticate } from '../middleware/auth.js';
-import { createMeeting, deleteMeeting, listMeetingsByMapAndDate, loadMeetingOrFail, updateMeeting } from '../services/meeting.service.js';
+import {
+  createMeeting,
+  deleteMeeting,
+  listMeetingsByResourceAndDate,
+  listMyMeetings,
+  loadMeetingOrFail,
+  updateMeeting,
+} from '../services/meeting.service.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { toMeetingDto } from '../utils/serializers.js';
 
 const meetingSchema = z.object({
-  roomId: z.uuid(),
+  bookableResourceId: z.uuid(),
   title: z.string().trim().min(1).max(120),
   description: z.string().max(2000).default(''),
   localDate: z.iso.date(),
@@ -17,7 +24,7 @@ const meetingSchema = z.object({
 });
 
 const querySchema = z.object({
-  mapId: z.uuid(),
+  bookableResourceId: z.uuid(),
   date: z.iso.date(),
 });
 
@@ -36,8 +43,33 @@ meetingsRouter.get(
   authenticate,
   asyncHandler(async (request, response) => {
     const query = querySchema.parse(request.query);
-    const meetings = await listMeetingsByMapAndDate(query.mapId, query.date);
+    const meetings = await listMeetingsByResourceAndDate(
+      request.user!.organizationId,
+      query.bookableResourceId,
+      query.date,
+    );
     return response.json(meetings.map(toMeetingDto));
+  }),
+);
+
+meetingsRouter.get(
+  '/mine',
+  authenticate,
+  asyncHandler(async (request, response) => {
+    const meetings = await listMyMeetings(request.user!);
+    return response.json(meetings.map(toMeetingDto));
+  }),
+);
+
+meetingsRouter.get(
+  '/:meetingId',
+  authenticate,
+  asyncHandler(async (request, response) => {
+    const meeting = await loadMeetingOrFail(
+      request.user!.organizationId,
+      routeParam(request.params.meetingId, 'meetingId'),
+    );
+    return response.json(toMeetingDto(meeting));
   }),
 );
 
@@ -70,11 +102,7 @@ meetingsRouter.delete(
   '/:meetingId',
   authenticate,
   asyncHandler(async (request, response) => {
-    const meetingId = routeParam(request.params.meetingId, 'meetingId');
-    await loadMeetingOrFail(meetingId).catch(() => {
-      throw new HttpError(404, 'Meeting not found.');
-    });
-    await deleteMeeting(meetingId, request.user!);
+    await deleteMeeting(routeParam(request.params.meetingId, 'meetingId'), request.user!);
     response.status(204).send();
   }),
 );

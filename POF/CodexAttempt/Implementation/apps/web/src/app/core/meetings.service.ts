@@ -9,9 +9,17 @@ import { apiUrl } from './api';
 export class MeetingsService {
   private readonly http = inject(HttpClient);
 
-  list(mapId: string, date: string): Promise<MeetingDto[]> {
-    const params = new HttpParams().set('mapId', mapId).set('date', date);
+  list(bookableResourceId: string, date: string): Promise<MeetingDto[]> {
+    const params = new HttpParams().set('bookableResourceId', bookableResourceId).set('date', date);
     return firstValueFrom(this.http.get<MeetingDto[]>(apiUrl('/meetings'), { params }));
+  }
+
+  mine(): Promise<MeetingDto[]> {
+    return firstValueFrom(this.http.get<MeetingDto[]>(apiUrl('/meetings/mine')));
+  }
+
+  get(meetingId: string): Promise<MeetingDto> {
+    return firstValueFrom(this.http.get<MeetingDto>(apiUrl(`/meetings/${meetingId}`)));
   }
 
   create(payload: CreateMeetingRequest): Promise<MeetingDto> {
@@ -26,4 +34,3 @@ export class MeetingsService {
     return firstValueFrom(this.http.delete<void>(apiUrl(`/meetings/${meetingId}`)));
   }
 }
-

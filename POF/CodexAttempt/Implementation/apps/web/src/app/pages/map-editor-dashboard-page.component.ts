@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { MapDto } from '@campus/contracts';
+import { FloorMapDto } from '@campus/contracts';
 
 import { MapPreviewComponent } from '../components/map-preview.component';
 import { MapsService } from '../core/maps.service';
@@ -17,12 +17,15 @@ import { MapsService } from '../core/maps.service';
       }
 
       @if (loading()) {
-        <p class="muted">Loading map...</p>
+        <p class="muted">Loading floor...</p>
       } @else if (map()) {
         <section class="section-header">
           <div>
             <h1>{{ map()!.name }}</h1>
-            <p class="muted">{{ map()!.floorLabel }} · {{ map()!.timezone }}</p>
+            <p class="muted">
+              {{ map()!.floorLabel }} · {{ map()!.campusPlaceName }} ·
+              {{ map()!.timezone }} (timezone from campus)
+            </p>
           </div>
           <div class="chips">
             <span class="chip">{{ map()!.roomCount }} rooms</span>
@@ -39,24 +42,21 @@ import { MapsService } from '../core/maps.service';
 
           <article class="card panel action-panel">
             <div>
-              <h2>Map Editor</h2>
+              <h2>Floor editor</h2>
               <p class="muted">
-                Configure the digital map first, then define room boundaries over the saved
-                footprint.
+                Configure the floor plan and alignment first, then define room boundaries over
+                the saved footprint.
               </p>
             </div>
 
             <div class="dashboard-actions">
-              <a class="button" [routerLink]="['/maps', map()!.id, 'edit', 'map']">
-                Configure map
+              <a class="button" [routerLink]="['/admin/floors', map()!.id, 'edit', 'map']">
+                Floor plan & alignment
               </a>
-              <a class="button" [routerLink]="['/maps', map()!.id, 'edit', 'rooms']">
+              <a class="button" [routerLink]="['/admin/floors', map()!.id, 'edit', 'rooms']">
                 Define rooms
               </a>
-              <a class="button ghost" [routerLink]="['/maps', map()!.id, 'book']">
-                Open booking view
-              </a>
-              <a class="button ghost" routerLink="/">Back to maps</a>
+              <a class="button ghost" routerLink="/admin/spaces">Back to spaces setup</a>
             </div>
           </article>
         </section>
@@ -89,7 +89,7 @@ export class MapEditorDashboardPageComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly mapsService = inject(MapsService);
 
-  protected readonly map = signal<MapDto | null>(null);
+  protected readonly map = signal<FloorMapDto | null>(null);
   protected readonly loading = signal(true);
   protected readonly error = signal('');
 
@@ -100,7 +100,7 @@ export class MapEditorDashboardPageComponent {
   private async load(): Promise<void> {
     const mapId = this.route.snapshot.paramMap.get('mapId');
     if (!mapId) {
-      this.error.set('Missing map id.');
+      this.error.set('Missing floor map id.');
       this.loading.set(false);
       return;
     }

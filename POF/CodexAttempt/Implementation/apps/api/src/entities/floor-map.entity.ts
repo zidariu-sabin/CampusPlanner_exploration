@@ -8,26 +8,25 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  Relation,
 } from 'typeorm';
 
+import { BuildingEntity } from './building.entity.js';
 import { RoomEntity } from './room.entity.js';
 
-@Entity({ name: 'maps' })
+@Entity({ name: 'floor_maps' })
 export class FloorMapEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  @Column({ type: 'uuid', name: 'building_id' })
+  buildingId = '';
 
   @Column({ type: 'varchar' })
   name = '';
 
   @Column({ type: 'varchar', name: 'floor_label' })
   floorLabel = '';
-
-  @Column({ type: 'varchar', default: 'Europe/Bucharest' })
-  timezone = 'Europe/Bucharest';
-
-  @Column({ type: 'uuid', name: 'parent_map_id', nullable: true })
-  parentMapId: string | null = null;
 
   @Column({ type: 'jsonb', name: 'footprint_geojson' })
   footprintGeoJson!: GeoJsonPolygon;
@@ -44,13 +43,10 @@ export class FloorMapEntity {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
 
-  @ManyToOne(() => FloorMapEntity, (map) => map.childMaps, { nullable: true, onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'parent_map_id' })
-  parentMap: FloorMapEntity | null = null;
+  @ManyToOne(() => BuildingEntity, (building) => building.floorMaps, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'building_id' })
+  building!: Relation<BuildingEntity>;
 
-  @OneToMany(() => FloorMapEntity, (map) => map.parentMap)
-  childMaps!: FloorMapEntity[];
-
-  @OneToMany(() => RoomEntity, (room) => room.map)
-  rooms!: RoomEntity[];
+  @OneToMany(() => RoomEntity, (room) => room.floorMap)
+  rooms!: Relation<RoomEntity>[];
 }

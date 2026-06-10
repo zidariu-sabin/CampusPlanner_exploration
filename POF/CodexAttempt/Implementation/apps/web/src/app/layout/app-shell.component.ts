@@ -12,14 +12,19 @@ import { AuthService } from '../core/auth.service';
     <div class="shell">
       <header class="shell-header">
         <div>
-          <p class="eyebrow">Campus Planner</p>
-          <a routerLink="/" class="brand">Map-first room scheduling</a>
+          <p class="eyebrow">{{ auth.organization()?.name || 'Campus Planner' }}</p>
+          <a routerLink="/" class="brand">Campus Planner</a>
         </div>
 
         <nav class="shell-nav">
-          <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Maps</a>
+          <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Dashboard</a>
+          <a routerLink="/map" routerLinkActive="active">Map view</a>
+          <a routerLink="/book" routerLinkActive="active">Book a room</a>
           @if (auth.isAdmin()) {
-            <a routerLink="/maps/new" routerLinkActive="active">Create Map</a>
+            <span class="divider" aria-hidden="true"></span>
+            <a routerLink="/admin/dashboard" routerLinkActive="active">Admin</a>
+            <a routerLink="/admin/spaces" routerLinkActive="active">Spaces setup</a>
+            <a routerLink="/admin/settings" routerLinkActive="active">Settings</a>
           }
         </nav>
 
@@ -74,6 +79,7 @@ import { AuthService } from '../core/auth.service';
     .shell-nav {
       display: flex;
       justify-content: center;
+      align-items: center;
       gap: 0.75rem;
       flex-wrap: wrap;
     }
@@ -88,6 +94,12 @@ import { AuthService } from '../core/auth.service';
     .shell-nav a.active {
       background: rgba(14, 116, 144, 0.12);
       color: var(--brand-strong);
+    }
+
+    .divider {
+      width: 1px;
+      height: 1.4rem;
+      background: rgba(15, 23, 42, 0.15);
     }
 
     .shell-user {
@@ -118,4 +130,3 @@ import { AuthService } from '../core/auth.service';
 export class AppShellComponent {
   protected readonly auth = inject(AuthService);
 }
-

@@ -1,3 +1,5 @@
 datasets/*
 !datasets/.gitkeep
 node_modules/
+graphify-out/
+AcademicDocumentation/

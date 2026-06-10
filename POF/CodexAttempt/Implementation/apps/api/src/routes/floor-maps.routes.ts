@@ -9,11 +9,11 @@ import { AppDataSource } from '../data-source.js';
 import { config } from '../config.js';
 import { FloorMapEntity } from '../entities/floor-map.entity.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { getMapOrFail, replaceRooms, resolveParentMapIdOrFail } from '../services/map.service.js';
+import { getFloorMapOrFail, listFloorMaps, replaceRooms, updateFloorMap } from '../services/floor-map.service.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { processMapBackgroundImage } from '../utils/background-image.js';
 import { HttpError } from '../utils/http-error.js';
-import { toMapDto, toMapSummaryDto } from '../utils/serializers.js';
+import { toFloorMapDto, toFloorMapSummaryDto } from '../utils/serializers.js';
 import { ensurePolygon } from '../utils/validation.js';
 
 function routeParam(value: string | string[] | undefined, name: string): string {
@@ -24,11 +24,9 @@ function routeParam(value: string | string[] | undefined, name: string): string 
   throw new HttpError(400, `Missing route parameter: ${name}.`);
 }
 
-const mapSchema = z.object({
+const floorMapSchema = z.object({
   name: z.string().trim().min(2).max(120),
   floorLabel: z.string().trim().min(1).max(50),
-  timezone: z.string().trim().min(1).default('Europe/Bucharest'),
-  parentMapId: z.string().uuid().nullable().optional().default(null),
   footprintGeoJson: z.any(),
 });
 
@@ -87,139 +85,116 @@ const upload = multer({
   }),
 });
 
-export const mapsRouter = Router();
+export const floorMapsRouter = Router();
 
-mapsRouter.get(
+floorMapsRouter.use(authenticate);
+
+floorMapsRouter.get(
   '/',
-  authenticate,
-  asyncHandler(async (_request, response) => {
-    const maps = await AppDataSource.getRepository(FloorMapEntity).find({
-      relations: {
-        parentMap: true,
-        childMaps: true,
-        rooms: true,
+  asyncHandler(async (request, response) => {
+    const floorMaps = await listFloorMaps(request.user!.organizationId);
+    response.json(floorMaps.map(toFloorMapSummaryDto));
+  }),
+);
+
+floorMapsRouter.get(
+  '/:floorMapId',
+  asyncHandler(async (request, response) => {
+    const floorMap = await getFloorMapOrFail(
+      request.user!.organizationId,
+      routeParam(request.params.floorMapId, 'floorMapId'),
+    );
+    response.json(toFloorMapDto(floorMap));
+  }),
+);
+
+floorMapsRouter.patch(
+  '/:floorMapId',
+  requireRole('owner', 'admin'),
+  asyncHandler(async (request, response) => {
+    const body = floorMapSchema.parse(request.body);
+    const floorMap = await updateFloorMap(
+      request.user!.organizationId,
+      routeParam(request.params.floorMapId, 'floorMapId'),
+      {
+        ...body,
+        footprintGeoJson: ensurePolygon(body.footprintGeoJson),
       },
-      order: {
-        name: 'ASC',
-      },
-    });
-
-    response.json(maps.map(toMapSummaryDto));
+    );
+    response.json(toFloorMapDto(floorMap));
   }),
 );
 
-mapsRouter.get(
-  '/:mapId',
-  authenticate,
-  asyncHandler(async (request, response) => {
-    response.json(toMapDto(await getMapOrFail(routeParam(request.params.mapId, 'mapId'))));
-  }),
-);
-
-mapsRouter.post(
-  '/',
-  authenticate,
-  requireRole('admin'),
-  asyncHandler(async (request, response) => {
-    const body = mapSchema.parse(request.body);
-    const map = AppDataSource.getRepository(FloorMapEntity).create({
-      name: body.name,
-      floorLabel: body.floorLabel,
-      timezone: body.timezone,
-      parentMapId: await resolveParentMapIdOrFail(null, body.parentMapId),
-      footprintGeoJson: ensurePolygon(body.footprintGeoJson),
-      backgroundFitMode: 'contain',
-    });
-
-    await AppDataSource.getRepository(FloorMapEntity).save(map);
-    response.status(201).json(toMapDto(await getMapOrFail(map.id)));
-  }),
-);
-
-mapsRouter.patch(
-  '/:mapId',
-  authenticate,
-  requireRole('admin'),
-  asyncHandler(async (request, response) => {
-    const body = mapSchema.parse(request.body);
-    const map = await getMapOrFail(routeParam(request.params.mapId, 'mapId'));
-    map.name = body.name;
-    map.floorLabel = body.floorLabel;
-    map.timezone = body.timezone;
-    map.parentMapId = await resolveParentMapIdOrFail(map.id, body.parentMapId);
-    map.footprintGeoJson = ensurePolygon(body.footprintGeoJson);
-
-    await AppDataSource.getRepository(FloorMapEntity).save(map);
-    response.json(toMapDto(await getMapOrFail(map.id)));
-  }),
-);
-
-mapsRouter.post(
-  '/:mapId/background-image',
-  authenticate,
-  requireRole('admin'),
+floorMapsRouter.post(
+  '/:floorMapId/background-image',
+  requireRole('owner', 'admin'),
   upload.single('image'),
   asyncHandler(async (request, response) => {
     if (!request.file) {
       throw new HttpError(400, 'An image file is required.');
     }
 
-    const map = await getMapOrFail(routeParam(request.params.mapId, 'mapId'));
-    const previousBackgroundImageUrl = map.backgroundImageUrl;
-    map.backgroundImageUrl = `/uploads/${request.file.filename}`;
-    await AppDataSource.getRepository(FloorMapEntity).save(map);
+    const floorMap = await getFloorMapOrFail(
+      request.user!.organizationId,
+      routeParam(request.params.floorMapId, 'floorMapId'),
+    );
+    const previousBackgroundImageUrl = floorMap.backgroundImageUrl;
+    floorMap.backgroundImageUrl = `/uploads/${request.file.filename}`;
+    await AppDataSource.getRepository(FloorMapEntity).save(floorMap);
     await deleteManagedUpload(previousBackgroundImageUrl);
 
-    response.json(toMapDto(await getMapOrFail(map.id)));
+    response.json(toFloorMapDto(await getFloorMapOrFail(request.user!.organizationId, floorMap.id)));
   }),
 );
 
-mapsRouter.post(
-  '/:mapId/background-image/process',
-  authenticate,
-  requireRole('admin'),
+floorMapsRouter.post(
+  '/:floorMapId/background-image/process',
+  requireRole('owner', 'admin'),
   asyncHandler(async (request, response) => {
     const body = processBackgroundImageSchema.parse(request.body);
-    const map = await getMapOrFail(routeParam(request.params.mapId, 'mapId'));
+    const floorMap = await getFloorMapOrFail(
+      request.user!.organizationId,
+      routeParam(request.params.floorMapId, 'floorMapId'),
+    );
 
-    if (!map.backgroundImageUrl) {
+    if (!floorMap.backgroundImageUrl) {
       throw new HttpError(400, 'Upload a background image before applying image edits.');
     }
 
-    const sourcePath = managedUploadPath(map.backgroundImageUrl);
+    const sourcePath = managedUploadPath(floorMap.backgroundImageUrl);
     if (!sourcePath) {
       throw new HttpError(400, 'Only locally uploaded background images can be processed.');
     }
 
-    const processedBackground = await processMapBackgroundImage(sourcePath, map.footprintGeoJson, body);
+    const processedBackground = await processMapBackgroundImage(sourcePath, floorMap.footprintGeoJson, body);
     const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
     const outputPath = path.join(config.uploadsDir, fileName);
-    const previousBackgroundImageUrl = map.backgroundImageUrl;
+    const previousBackgroundImageUrl = floorMap.backgroundImageUrl;
 
     await fs.writeFile(outputPath, processedBackground);
-    map.backgroundImageUrl = `/uploads/${fileName}`;
-    await AppDataSource.getRepository(FloorMapEntity).save(map);
+    floorMap.backgroundImageUrl = `/uploads/${fileName}`;
+    await AppDataSource.getRepository(FloorMapEntity).save(floorMap);
     await deleteManagedUpload(previousBackgroundImageUrl);
 
-    response.json(toMapDto(await getMapOrFail(map.id)));
+    response.json(toFloorMapDto(await getFloorMapOrFail(request.user!.organizationId, floorMap.id)));
   }),
 );
 
-mapsRouter.put(
-  '/:mapId/rooms',
-  authenticate,
-  requireRole('admin'),
+floorMapsRouter.put(
+  '/:floorMapId/rooms',
+  requireRole('owner', 'admin'),
   asyncHandler(async (request, response) => {
     const body = replaceRoomsSchema.parse(request.body);
-    const map = await replaceRooms(
-      routeParam(request.params.mapId, 'mapId'),
+    const floorMap = await replaceRooms(
+      request.user!.organizationId,
+      routeParam(request.params.floorMapId, 'floorMapId'),
       body.rooms.map((room) => ({
         ...room,
         geometryGeoJson: ensurePolygon(room.geometryGeoJson),
       })),
     );
 
-    response.json(toMapDto(map));
+    response.json(toFloorMapDto(floorMap));
   }),
 );
 

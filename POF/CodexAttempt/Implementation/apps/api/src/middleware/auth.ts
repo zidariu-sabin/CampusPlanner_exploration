@@ -10,6 +10,7 @@ interface TokenPayload {
   sub: string;
   role: string;
   email: string;
+  organizationId: string;
 }
 
 export async function authenticate(request: Request, _response: Response, next: NextFunction): Promise<void> {
@@ -21,7 +22,10 @@ export async function authenticate(request: Request, _response: Response, next: 
   try {
     const token = authHeader.replace('Bearer ', '');
     const payload = jwt.verify(token, config.jwtSecret) as TokenPayload;
-    const user = await AppDataSource.getRepository(UserEntity).findOneBy({ id: payload.sub });
+    const user = await AppDataSource.getRepository(UserEntity).findOne({
+      where: { id: payload.sub },
+      relations: { organization: true },
+    });
 
     if (!user) {
       return next(new HttpError(401, 'Authentication required.'));
@@ -34,17 +38,16 @@ export async function authenticate(request: Request, _response: Response, next: 
   }
 }
 
-export function requireRole(role: UserEntity['role']) {
+export function requireRole(...roles: Array<UserEntity['role']>) {
   return (request: Request, _response: Response, next: NextFunction): void => {
     if (!request.user) {
       return next(new HttpError(401, 'Authentication required.'));
     }
 
-    if (request.user.role !== role) {
+    if (!roles.includes(request.user.role)) {
       return next(new HttpError(403, 'You do not have permission for this action.'));
     }
 
     return next();
   };
 }
-

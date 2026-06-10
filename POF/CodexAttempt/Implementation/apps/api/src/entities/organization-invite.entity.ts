@@ -4,19 +4,17 @@ import {
   CreateDateColumn,
   Entity,
   JoinColumn,
-  ManyToMany,
   ManyToOne,
-  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
   Relation,
 } from 'typeorm';
 
-import { MeetingEntity } from './meeting.entity.js';
 import { OrganizationEntity } from './organization.entity.js';
+import { UserEntity } from './user.entity.js';
 
-@Entity({ name: 'users' })
-export class UserEntity {
+@Entity({ name: 'organization_invites' })
+export class OrganizationInviteEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -24,16 +22,22 @@ export class UserEntity {
   organizationId = '';
 
   @Column({ type: 'varchar', unique: true })
-  email = '';
-
-  @Column({ type: 'varchar', name: 'password_hash' })
-  passwordHash = '';
-
-  @Column({ type: 'varchar', name: 'display_name' })
-  displayName = '';
+  token = '';
 
   @Column({ type: 'varchar' })
   role: OrganizationRole = 'member';
+
+  @Column({ type: 'varchar', nullable: true })
+  email: string | null = null;
+
+  @Column({ type: 'uuid', name: 'created_by_user_id' })
+  createdByUserId = '';
+
+  @Column({ type: 'timestamptz', name: 'expires_at' })
+  expiresAt!: Date;
+
+  @Column({ type: 'timestamptz', name: 'used_at', nullable: true })
+  usedAt: Date | null = null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
@@ -41,13 +45,11 @@ export class UserEntity {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
 
-  @ManyToOne(() => OrganizationEntity, (organization) => organization.users, { onDelete: 'CASCADE' })
+  @ManyToOne(() => OrganizationEntity, (organization) => organization.invites, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'organization_id' })
   organization!: Relation<OrganizationEntity>;
 
-  @OneToMany(() => MeetingEntity, (meeting) => meeting.createdBy)
-  meetingsCreated!: Relation<MeetingEntity>[];
-
-  @ManyToMany(() => MeetingEntity, (meeting) => meeting.participants)
-  meetings!: Relation<MeetingEntity>[];
+  @ManyToOne(() => UserEntity, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'created_by_user_id' })
+  createdBy!: Relation<UserEntity>;
 }
