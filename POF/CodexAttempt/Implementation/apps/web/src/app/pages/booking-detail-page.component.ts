@@ -15,7 +15,7 @@ import { ResourcesService } from '../core/resources.service';
   standalone: true,
   imports: [CommonModule, RouterLink, MapPreviewComponent],
   template: `
-    <div class="page">
+    <div class="screen-shell">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
@@ -23,170 +23,94 @@ import { ResourcesService } from '../core/resources.service';
       @if (loading()) {
         <p class="muted">Loading booking...</p>
       } @else if (meeting(); as meeting) {
-        <section class="section-header">
-          <div>
-            <h1>{{ meeting.title }}</h1>
-            <p class="muted">{{ localTimeLabel() }}</p>
-          </div>
-          <div class="chips">
-            <span class="chip confirmed">Confirmed</span>
-            @if (resource(); as resource) {
-              <span class="chip">
-                {{ resource.kind === 'room' ? 'room' : 'outdoor space' }}
-              </span>
-            }
-          </div>
-        </section>
-
-        <section class="detail-grid">
-          <article class="card panel">
-            <h2>Booking summary</h2>
-
-            <div class="info-rows">
-              <div class="info-row">
-                <span class="muted">Campus</span>
-                <strong>{{ resource()?.campusName || '—' }}</strong>
+        <section class="map-layout">
+          <section class="panel">
+            <header class="panel-header">
+              <div>
+                <h3>Room location</h3>
+                <p>{{ resource()?.campusName || 'Indoor route preview' }}</p>
               </div>
-              <div class="info-row">
-                <span class="muted">Space</span>
-                <strong>{{ resource()?.campusPlaceName || resource()?.name || '—' }}</strong>
-              </div>
-              <div class="info-row">
-                <span class="muted">Floor</span>
-                <strong>{{ resource()?.floorLabel || '—' }}</strong>
-              </div>
-              <div class="info-row">
-                <span class="muted">Room / space</span>
-                <strong>{{ resource()?.name || 'Unknown location' }}</strong>
-              </div>
-              <div class="info-row">
-                <span class="muted">Organizer</span>
-                <strong>{{ meeting.createdBy.displayName }}</strong>
-              </div>
+            </header>
+            <div class="panel-body">
+              @if (floorMap(); as map) {
+                <app-map-preview [map]="map" [compact]="true" [selectedRoomId]="meeting.roomId" />
+              } @else if (loadingMap()) {
+                <p class="muted">Loading floor map...</p>
+              } @else {
+                <p class="muted">No indoor map is available for this booking.</p>
+              }
             </div>
+          </section>
 
-            @if (meeting.description) {
-              <p>{{ meeting.description }}</p>
-            } @else {
-              <p class="muted">No description.</p>
-            }
+          <section class="panel">
+            <header class="panel-header">
+              <div>
+                <h3>{{ meeting.title }}</h3>
+                <p>{{ localTimeLabel() }}</p>
+              </div>
+            </header>
+            <div class="panel-body">
+              <div class="booking-summary">
+                <span class="badge badge-good">Confirmed</span>
+                <span class="badge">{{ resource()?.name || 'Unknown location' }}</span>
+                @if (resource()?.floorLabel) {
+                  <span class="badge">{{ resource()!.floorLabel }}</span>
+                }
+              </div>
 
-            <div>
-              <h3>Participants</h3>
-              <div class="chips participant-chips">
-                @for (participant of meeting.participants; track participant.id) {
-                  <span class="chip">{{ participant.displayName }}</span>
-                } @empty {
-                  <span class="muted">No additional participants.</span>
+              <div class="booking-detail-card">
+                <div><span>Campus</span><strong>{{ resource()?.campusName || '—' }}</strong></div>
+                <div>
+                  <span>Space</span>
+                  <strong>{{ resource()?.campusPlaceName || resource()?.name || '—' }}</strong>
+                </div>
+                <div><span>Floor</span><strong>{{ resource()?.floorLabel || '—' }}</strong></div>
+                <div><span>Room</span><strong>{{ resource()?.name || '—' }}</strong></div>
+                <div><span>Organizer</span><strong>{{ meeting.createdBy.displayName }}</strong></div>
+                <div><span>Guests</span><strong>{{ guestNames(meeting) }}</strong></div>
+              </div>
+
+              @if (meeting.description) {
+                <p class="muted">{{ meeting.description }}</p>
+              }
+
+              <div class="route-steps">
+                @for (step of routeSteps(); track $index) {
+                  <div class="route-step">
+                    <span>{{ $index + 1 }}</span>
+                    <p>{{ step }}</p>
+                  </div>
+                }
+              </div>
+
+              <button class="primary-action" type="button" disabled>Start navigation</button>
+
+              <div class="detail-actions">
+                <a class="secondary-action" routerLink="/">Back to dashboard</a>
+                @if (canCancel()) {
+                  <button
+                    type="button"
+                    class="danger"
+                    [disabled]="cancelling()"
+                    (click)="cancelBooking()"
+                  >
+                    {{ cancelling() ? 'Cancelling...' : 'Cancel booking' }}
+                  </button>
                 }
               </div>
             </div>
-
-            <div class="actions">
-              <a class="button ghost" routerLink="/">Back to dashboard</a>
-              @if (canCancel()) {
-                <button
-                  type="button"
-                  class="danger"
-                  [disabled]="cancelling()"
-                  (click)="cancelBooking()"
-                >
-                  {{ cancelling() ? 'Cancelling...' : 'Cancel booking' }}
-                </button>
-              }
-            </div>
-          </article>
-
-          <article class="card panel">
-            <h2>Room location</h2>
-            @if (floorMap(); as map) {
-              <app-map-preview [map]="map" [compact]="true" [selectedRoomId]="meeting.roomId" />
-            } @else if (loadingMap()) {
-              <p class="muted">Loading floor map...</p>
-            } @else {
-              <p class="muted">No indoor map is available for this booking.</p>
-            }
-          </article>
-        </section>
-
-        <section class="card panel">
-          <div class="section-header">
-            <div>
-              <h2>Route instructions</h2>
-              <p class="muted">Static guidance derived from the booking location.</p>
-            </div>
-          </div>
-
-          <ol class="route-steps">
-            @for (step of routeSteps(); track $index) {
-              <li>{{ step }}</li>
-            }
-          </ol>
-
-          <div class="actions">
-            <button type="button" disabled>Start navigation</button>
-            <span class="muted">Live indoor navigation is not available yet.</span>
-          </div>
+          </section>
         </section>
       }
     </div>
   `,
   styles: `
-    .detail-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 1rem;
-      align-items: start;
-    }
-
-    .panel {
-      padding: 1.25rem;
-      display: grid;
-      gap: 1rem;
-    }
-
-    .chip.confirmed {
-      background: rgba(21, 128, 61, 0.12);
-      color: #166534;
-    }
-
-    .info-rows {
-      display: grid;
-      gap: 0.45rem;
-    }
-
-    .info-row {
+    .detail-actions {
       display: flex;
-      justify-content: space-between;
-      gap: 1rem;
-      padding: 0.55rem 0.8rem;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: rgba(255, 255, 255, 0.55);
-    }
-
-    .participant-chips {
-      margin-top: 0.5rem;
-    }
-
-    .actions {
-      display: flex;
-      gap: 0.8rem;
+      gap: 8px;
       align-items: center;
       flex-wrap: wrap;
-    }
-
-    .route-steps {
-      margin: 0;
-      padding-left: 1.3rem;
-      display: grid;
-      gap: 0.5rem;
-    }
-
-    @media (max-width: 980px) {
-      .detail-grid {
-        grid-template-columns: 1fr;
-      }
+      margin-top: 4px;
     }
   `,
 })
@@ -240,6 +164,11 @@ export class BookingDetailPageComponent {
     }
 
     return meeting.createdBy.id === me.id || this.auth.isAdmin();
+  }
+
+  protected guestNames(meeting: MeetingDto): string {
+    const names = meeting.participants.map((participant) => participant.displayName);
+    return names.length > 0 ? names.join(', ') : 'No additional guests';
   }
 
   protected routeSteps(): string[] {

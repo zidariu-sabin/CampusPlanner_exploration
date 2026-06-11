@@ -21,14 +21,7 @@ const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00
   standalone: true,
   imports: [CommonModule, FormsModule, MapPreviewComponent],
   template: `
-    <div class="page">
-      <section class="section-header">
-        <div>
-          <h1>Book a room</h1>
-          <p class="muted">Pick a space, choose a free one-hour slot, and invite participants.</p>
-        </div>
-      </section>
-
+    <div class="screen-shell">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
@@ -36,52 +29,71 @@ const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00
       @if (loading()) {
         <p class="muted">Loading available spaces...</p>
       } @else {
-        <section class="booking-layout">
-          <aside class="card panel">
-            <div>
-              <h2>Available spaces</h2>
-              <p class="muted">{{ resources().length }} bookable resources in your organization.</p>
-            </div>
-
-            <div class="resource-list">
-              @for (resource of resources(); track resource.id) {
-                <button
-                  type="button"
-                  class="resource-card"
-                  [class.selected]="resource.id === selectedResource()?.id"
-                  (click)="pickResource(resource)"
-                >
-                  <span class="resource-head">
-                    <strong>{{ resource.name }}</strong>
-                    <span class="chip" [class.outdoor]="resource.kind === 'campus_place'">
-                      {{ resource.kind === 'room' ? 'room' : 'outdoor space' }}
-                    </span>
-                  </span>
-                  <span class="muted">{{ resourceLocation(resource) }}</span>
-                </button>
-              } @empty {
-                <p class="muted">No bookable spaces configured yet.</p>
-              }
-            </div>
-          </aside>
-
-          <section class="card panel">
-            @if (selectedResource(); as resource) {
-              <div class="section-header">
-                <div>
-                  <h2>{{ resource.name }}</h2>
-                  <p class="muted">{{ resourceLocation(resource) }}</p>
-                </div>
-                <span class="chip">{{ resource.timezone }}</span>
-              </div>
-
-              <label>
-                Date
-                <input type="date" [(ngModel)]="selectedDate" (change)="onDateChange()" />
-              </label>
-
+        <section class="map-layout">
+          <section class="panel">
+            <header class="panel-header">
               <div>
-                <h3>Time slots</h3>
+                <h3>Available rooms</h3>
+                <p>{{ resources().length }} bookable resources in your organization</p>
+              </div>
+            </header>
+            <div class="panel-body">
+              <div class="card-list">
+                @for (resource of resources(); track resource.id) {
+                  <article
+                    class="member-room-card"
+                    [class.is-selected]="resource.id === selectedResource()?.id"
+                  >
+                    <div>
+                      <h3>{{ resource.name }}</h3>
+                      <p>{{ resourceLocation(resource) }}</p>
+                      <div class="status-row">
+                        <span class="badge badge-good">
+                          {{ resource.kind === 'room' ? 'Room' : 'Outdoor space' }}
+                        </span>
+                        @if (resource.floorLabel) {
+                          <span class="badge">{{ resource.floorLabel }}</span>
+                        }
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      [class]="resource.id === selectedResource()?.id ? 'primary-action' : 'secondary-action'"
+                      (click)="pickResource(resource)"
+                    >
+                      {{ resource.id === selectedResource()?.id ? 'Selected' : 'Select' }}
+                    </button>
+                  </article>
+                } @empty {
+                  <p class="muted">No bookable spaces configured yet.</p>
+                }
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            @if (selectedResource(); as resource) {
+              <header class="panel-header">
+                <div>
+                  <h3>Book {{ resource.name }}</h3>
+                  <p>{{ resourceLocation(resource) }}</p>
+                </div>
+              </header>
+              <div class="panel-body">
+                <div class="booking-summary">
+                  <span class="badge badge-good">{{ resource.timezone }}</span>
+                  @if (resource.floorLabel) {
+                    <span class="badge">{{ resource.floorLabel }}</span>
+                  }
+                  <span class="badge">{{ resource.kind === 'room' ? 'Room' : 'Outdoor space' }}</span>
+                </div>
+
+                <label>
+                  Date
+                  <input type="date" [(ngModel)]="selectedDate" (change)="onDateChange()" />
+                </label>
+
+                <strong class="selector-label">Time slots</strong>
                 @if (loadingSlots()) {
                   <p class="muted">Checking availability...</p>
                 } @else {
@@ -95,221 +107,115 @@ const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00
                         [disabled]="isBusy(hour)"
                         (click)="selectedHour.set(hour)"
                       >
-                        {{ hourLabel(hour) }}
-                        <span class="slot-state">{{ isBusy(hour) ? 'busy' : 'free' }}</span>
+                        {{ slotLabel(hour) }}
                       </button>
                     }
                   </div>
                 }
-              </div>
 
-              <div class="form-grid">
                 <label>
-                  Title
+                  Meeting title
                   <input [(ngModel)]="title" placeholder="Team sync" />
                 </label>
                 <label>
                   Description
                   <textarea [(ngModel)]="description" placeholder="Optional agenda"></textarea>
                 </label>
-              </div>
 
-              <div>
-                <h3>Participants</h3>
-                <div class="participant-list">
+                <strong class="selector-label">Participants</strong>
+                <div class="card-list">
                   @for (user of invitableUsers(); track user.id) {
-                    <label class="participant">
+                    <label class="compact-card participant">
+                      <span>{{ user.displayName }} · {{ user.email }}</span>
                       <input
                         type="checkbox"
                         [checked]="participantIds().has(user.id)"
                         (change)="toggleParticipant(user.id)"
                       />
-                      <span>{{ user.displayName }}</span>
-                      <span class="muted">{{ user.email }}</span>
                     </label>
                   } @empty {
                     <p class="muted">No other members to invite.</p>
                   }
                 </div>
-              </div>
 
-              @if (conflictError()) {
-                <p class="message error">{{ conflictError() }}</p>
-              }
+                @if (conflictError()) {
+                  <p class="message error">{{ conflictError() }}</p>
+                }
 
-              <div class="actions">
-                <button type="button" [disabled]="!canConfirm() || saving()" (click)="confirm()">
+                <div class="booking-detail-card">
+                  <div><span>Room</span><strong>{{ resource.name }}</strong></div>
+                  <div>
+                    <span>Floor</span>
+                    <strong>{{ resource.floorLabel || resource.campusPlaceName || '—' }}</strong>
+                  </div>
+                  <div><span>Organizer</span><strong>{{ organizerName() }}</strong></div>
+                  @if (selectedHour() !== null) {
+                    <div><span>Slot</span><strong>{{ selectedDate }} · {{ hourLabel(selectedHour()!) }}</strong></div>
+                  }
+                </div>
+
+                <button
+                  class="primary-action"
+                  type="button"
+                  [disabled]="!canConfirm() || saving()"
+                  (click)="confirm()"
+                >
                   {{ saving() ? 'Booking...' : 'Confirm booking' }}
                 </button>
-                @if (selectedHour() !== null) {
-                  <span class="muted">
-                    {{ selectedDate }} · {{ hourLabel(selectedHour()!) }}
-                  </span>
-                }
               </div>
             } @else {
-              <div class="empty-panel">
-                <h2>Select a space</h2>
-                <p class="muted">Choose a room or outdoor space from the list to see availability.</p>
+              <header class="panel-header">
+                <div>
+                  <h3>Select a space</h3>
+                  <p>Choose a room or outdoor space to see availability</p>
+                </div>
+              </header>
+              <div class="panel-body">
+                <div class="inline-form-title">
+                  <strong>No space selected</strong>
+                  <span>Pick a room or outdoor space from the list to review its open slots.</span>
+                </div>
               </div>
             }
           </section>
         </section>
 
         @if (selectedResource()?.floorMapId) {
-          <section class="card panel">
-            <div class="section-header">
+          <section class="panel">
+            <header class="panel-header">
               <div>
-                <h2>Floor context</h2>
-                <p class="muted">
+                <h3>Floor context</h3>
+                <p>
                   {{ selectedResource()!.campusPlaceName }} ·
                   {{ selectedResource()!.floorLabel }} — the selected room is highlighted.
                 </p>
               </div>
+            </header>
+            <div class="panel-body">
+              @if (floorMap(); as map) {
+                <app-map-preview
+                  [map]="map"
+                  [compact]="true"
+                  [selectedRoomId]="selectedResource()!.roomId"
+                />
+              } @else {
+                <p class="muted">Loading floor preview...</p>
+              }
             </div>
-            @if (floorMap(); as map) {
-              <app-map-preview
-                [map]="map"
-                [compact]="true"
-                [selectedRoomId]="selectedResource()!.roomId"
-              />
-            } @else {
-              <p class="muted">Loading floor preview...</p>
-            }
           </section>
         }
       }
     </div>
   `,
   styles: `
-    .booking-layout {
-      display: grid;
-      grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
-      gap: 1rem;
-      align-items: start;
-    }
-
-    .panel {
-      padding: 1.25rem;
-      display: grid;
-      gap: 1.1rem;
-    }
-
-    .resource-list {
-      display: grid;
-      gap: 0.6rem;
-      max-height: 560px;
-      overflow: auto;
-    }
-
-    .resource-card {
-      display: grid;
-      gap: 0.3rem;
-      justify-items: start;
-      text-align: left;
-      padding: 0.85rem 1rem;
-      border-radius: 18px;
-      background: white;
-      color: var(--ink);
-      box-shadow: inset 0 0 0 1px var(--line);
-    }
-
-    .resource-card.selected {
-      box-shadow: inset 0 0 0 2px var(--brand);
-      background: rgba(14, 116, 144, 0.06);
-    }
-
-    .resource-head {
-      display: flex;
-      gap: 0.5rem;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .chip.outdoor {
-      background: rgba(194, 65, 12, 0.1);
-      color: var(--accent);
-    }
-
-    .slot-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-      gap: 0.5rem;
-      margin-top: 0.6rem;
-    }
-
-    .slot {
-      display: grid;
-      gap: 0.1rem;
-      padding: 0.6rem 0.5rem;
-      border-radius: 14px;
-      background: white;
-      color: var(--ink);
-      box-shadow: inset 0 0 0 1px var(--line);
-      font-size: 0.92rem;
-    }
-
-    .slot-state {
-      font-size: 0.75rem;
-      color: var(--ink-soft);
-    }
-
-    .slot.busy {
-      opacity: 0.45;
-      text-decoration: line-through;
-    }
-
-    .slot.selected {
-      box-shadow: inset 0 0 0 2px var(--brand);
-      background: rgba(14, 116, 144, 0.1);
-    }
-
-    .form-grid {
-      display: grid;
-      gap: 0.8rem;
-    }
-
-    .participant-list {
-      display: grid;
-      gap: 0.55rem;
-      margin-top: 0.6rem;
-      max-height: 260px;
-      overflow: auto;
-    }
-
     .participant {
-      display: flex;
-      gap: 0.7rem;
-      align-items: center;
-      flex-wrap: wrap;
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 0.65rem 0.9rem;
+      cursor: pointer;
     }
 
-    .participant input {
-      width: auto;
-    }
-
-    .actions {
-      display: flex;
-      gap: 1rem;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .empty-panel {
-      display: grid;
-      gap: 0.5rem;
-      padding: 3rem 1rem;
-      justify-items: center;
-      text-align: center;
-    }
-
-    @media (max-width: 980px) {
-      .booking-layout {
-        grid-template-columns: 1fr;
-      }
+    .participant span {
+      font-size: 13px;
+      color: var(--ink);
+      font-weight: 700;
     }
   `,
 })
@@ -392,6 +298,14 @@ export class BookingPageComponent {
 
   protected hourLabel(hour: number): string {
     return `${String(hour).padStart(2, '0')}:00–${String(hour + 1).padStart(2, '0')}:00`;
+  }
+
+  protected slotLabel(hour: number): string {
+    return `${String(hour).padStart(2, '0')}:00`;
+  }
+
+  protected organizerName(): string {
+    return this.auth.user()?.displayName ?? 'You';
   }
 
   protected isBusy(hour: number): boolean {

@@ -12,14 +12,7 @@ import { UsersService } from '../core/users.service';
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
   template: `
-    <div class="page admin-settings">
-      <section class="section-header">
-        <div>
-          <h1>Organization settings</h1>
-          <p class="muted">Users, access, invitations and tenant publishing for {{ organizationName() }}.</p>
-        </div>
-      </section>
-
+    <div class="screen-shell">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
@@ -27,240 +20,156 @@ import { UsersService } from '../core/users.service';
       @if (loading()) {
         <p class="muted">Loading settings…</p>
       } @else {
-        <section class="grid-2 settings-grid">
-          <article class="card panel">
-            <div class="section-header">
-              <h2>Users &amp; access</h2>
-              <span class="chip">{{ users().length }} users</span>
-            </div>
+        <section class="settings-layout">
+          <aside class="settings-nav">
+            <button class="active" type="button">Users and roles</button>
+            <button type="button">Publishing</button>
+            <button type="button">Domains</button>
+            <button type="button">Branding</button>
+            <button type="button">Audit log</button>
+          </aside>
 
-            <table class="settings-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (user of users(); track user.id) {
-                  <tr>
-                    <td>{{ user.displayName }}</td>
-                    <td class="muted">{{ user.email }}</td>
-                    <td>
-                      <span class="badge" [class.owner]="user.role === 'owner'" [class.admin]="user.role === 'admin'">
-                        {{ user.role }}
-                      </span>
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </article>
-
-          <article class="card panel">
-            <div class="section-header">
-              <h2>Invitations</h2>
-              <span class="chip">{{ pendingInviteCount() }} pending</span>
-            </div>
-
-            <form class="invite-form" [formGroup]="inviteForm" (ngSubmit)="createInvite()">
-              <label>
-                Role
-                <select formControlName="role">
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </label>
-              <label>
-                Email (optional)
-                <input type="email" formControlName="email" placeholder="person@example.com" />
-              </label>
-              <button type="submit" [disabled]="creatingInvite()">
-                {{ creatingInvite() ? 'Creating…' : 'Create invite' }}
-              </button>
-            </form>
-
-            @if (lastCreatedInvite(); as invite) {
-              <div class="message success invite-created">
-                <span>Invite created. Share this link:</span>
-                <code class="mono">{{ inviteLink(invite) }}</code>
-                <button type="button" class="ghost" (click)="copyLink(invite)">
-                  {{ copiedInviteId() === invite.id ? 'Copied' : 'Copy link' }}
-                </button>
-              </div>
-            }
-
-            @if (invites().length === 0) {
-              <p class="muted">No invitations yet. Create one to onboard teammates.</p>
-            }
-
-            <div class="invite-list">
-              @for (invite of invites(); track invite.id) {
-                <div class="invite-row">
-                  <div class="invite-row-head">
-                    <span class="badge" [class.admin]="invite.role === 'admin'">{{ invite.role }}</span>
-                    <span class="badge" [class.success]="!invite.usedAt" [class.used]="!!invite.usedAt">
-                      {{ invite.usedAt ? 'used' : 'pending' }}
-                    </span>
+          <div class="side-stack">
+            <section class="panel">
+              <header class="panel-header">
+                <div>
+                  <h3>Users and access</h3>
+                  <p>Role-based access for {{ organizationName() }}</p>
+                </div>
+                <span class="badge">{{ users().length }} users</span>
+              </header>
+              <div class="panel-body">
+                <div class="table">
+                  <div class="table-row table-head">
+                    <span>User</span>
+                    <span>Role</span>
+                    <span>Status</span>
                   </div>
-                  <div class="muted">
-                    {{ invite.email || 'Anyone with the link' }} · expires {{ invite.expiresAt | date: 'mediumDate' }}
-                  </div>
-                  @if (!invite.usedAt) {
-                    <div class="invite-link">
-                      <code class="mono">{{ inviteLink(invite) }}</code>
-                      <button type="button" class="ghost" (click)="copyLink(invite)">
-                        {{ copiedInviteId() === invite.id ? 'Copied' : 'Copy' }}
-                      </button>
+                  @for (user of users(); track user.id) {
+                    <div class="table-row">
+                      <div>
+                        <strong>{{ user.displayName }}</strong>
+                        <div class="muted user-email">{{ user.email }}</div>
+                      </div>
+                      <span>{{ user.role }}</span>
+                      <span class="badge badge-good">Active</span>
                     </div>
                   }
                 </div>
-              }
-            </div>
-          </article>
-        </section>
 
-        <section class="grid-2 settings-grid">
-          <article class="card panel">
-            <div class="section-header">
-              <h2>Private URL</h2>
-              <span class="badge success">Published</span>
-            </div>
-            <p class="muted">Your team reaches the workspace through the private tenant URL.</p>
-            <code class="mono url-box">{{ privateUrl() }}</code>
-          </article>
+                <div class="domain-cards">
+                  <article>
+                    <strong>Private URL</strong>
+                    <p>{{ privateUrl() }}</p>
+                    <span class="badge badge-good">Published</span>
+                  </article>
+                  <article>
+                    <strong>Custom domain</strong>
+                    <p>Map your own domain (e.g. maps.your-university.edu) to this workspace.</p>
+                    <span class="badge badge-warn">Not configured</span>
+                  </article>
+                </div>
+              </div>
+            </section>
 
-          <article class="card panel">
-            <div class="section-header">
-              <h2>Custom domain</h2>
-              <span class="badge used">Not configured</span>
-            </div>
-            <p class="muted">
-              Map your own domain (for example maps.your-university.edu) to this workspace. Domain
-              verification and DNS setup are not yet available — this feature is planned.
-            </p>
-          </article>
+            <section class="panel">
+              <header class="panel-header">
+                <div>
+                  <h3>Invitations</h3>
+                  <p>Onboard teammates with a shareable invite link</p>
+                </div>
+                <span class="badge">{{ pendingInviteCount() }} pending</span>
+              </header>
+              <div class="panel-body">
+                <form class="invite-form" [formGroup]="inviteForm" (ngSubmit)="createInvite()">
+                  <label>
+                    Role
+                    <select formControlName="role">
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </label>
+                  <label>
+                    Email (optional)
+                    <input type="email" formControlName="email" placeholder="person@example.com" />
+                  </label>
+                  <button class="primary-action" type="submit" [disabled]="creatingInvite()">
+                    {{ creatingInvite() ? 'Creating…' : 'Create invite' }}
+                  </button>
+                </form>
+
+                @if (lastCreatedInvite(); as invite) {
+                  <div class="message success invite-created">
+                    <span>Invite created. Share this link:</span>
+                    <code class="mono">{{ inviteLink(invite) }}</code>
+                    <button type="button" class="secondary-action" (click)="copyLink(invite)">
+                      {{ copiedInviteId() === invite.id ? 'Copied' : 'Copy link' }}
+                    </button>
+                  </div>
+                }
+
+                @if (invites().length === 0) {
+                  <p class="muted">No invitations yet. Create one to onboard teammates.</p>
+                }
+
+                <div class="card-list">
+                  @for (invite of invites(); track invite.id) {
+                    <article class="compact-card invite-row">
+                      <div>
+                        <div class="status-row">
+                          <span class="badge">{{ invite.role }}</span>
+                          <span class="badge" [class.badge-good]="!invite.usedAt" [class.badge-warn]="!!invite.usedAt">
+                            {{ invite.usedAt ? 'used' : 'pending' }}
+                          </span>
+                        </div>
+                        <p class="muted invite-meta">
+                          {{ invite.email || 'Anyone with the link' }} · expires
+                          {{ invite.expiresAt | date: 'mediumDate' }}
+                        </p>
+                      </div>
+                      @if (!invite.usedAt) {
+                        <button type="button" class="secondary-action" (click)="copyLink(invite)">
+                          {{ copiedInviteId() === invite.id ? 'Copied' : 'Copy' }}
+                        </button>
+                      }
+                    </article>
+                  }
+                </div>
+              </div>
+            </section>
+          </div>
         </section>
       }
     </div>
   `,
   styles: `
-    .admin-settings {
-      display: grid;
-      gap: 1.5rem;
-    }
-
-    .settings-grid {
-      align-items: start;
-    }
-
-    .panel {
-      padding: 1.25rem;
-      display: grid;
-      gap: 1rem;
-      align-content: start;
-    }
-
-    .settings-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.95rem;
-    }
-
-    .settings-table th {
-      text-align: left;
-      font-weight: 500;
-      color: var(--ink-soft);
-      padding: 0.4rem 0.6rem;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .settings-table td {
-      padding: 0.6rem;
-      border-bottom: 1px solid var(--line);
+    .user-email {
+      font-size: 11px;
+      margin-top: 2px;
     }
 
     .invite-form {
       display: grid;
-      grid-template-columns: 1fr 1.4fr auto;
-      gap: 0.75rem;
+      grid-template-columns: 120px 1fr auto;
+      gap: 10px;
       align-items: end;
     }
 
-    .invite-list {
-      display: grid;
-      gap: 0.75rem;
-    }
-
-    .invite-row {
-      display: grid;
-      gap: 0.45rem;
-      padding: 0.85rem 1rem;
-      border-radius: 18px;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.6);
-    }
-
-    .invite-row-head {
-      display: flex;
-      gap: 0.5rem;
-    }
-
-    .invite-link,
     .invite-created {
       display: flex;
-      gap: 0.6rem;
+      gap: 8px;
       align-items: center;
       flex-wrap: wrap;
     }
 
-    .invite-link code,
     .invite-created code,
-    .url-box {
-      font-size: 0.82rem;
-      padding: 0.45rem 0.7rem;
-      border-radius: 12px;
-      background: rgba(31, 42, 51, 0.06);
+    .invite-meta {
+      font-size: 12px;
       word-break: break-all;
     }
 
-    .invite-link button,
-    .invite-created button {
-      padding: 0.45rem 0.9rem;
-      font-size: 0.85rem;
-    }
-
-    .badge {
-      display: inline-flex;
+    .invite-row {
       align-items: center;
-      padding: 0.25rem 0.65rem;
-      border-radius: 999px;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      background: rgba(14, 116, 144, 0.1);
-      color: var(--brand-strong);
-    }
-
-    .badge.owner {
-      background: rgba(194, 65, 12, 0.12);
-      color: var(--accent);
-    }
-
-    .badge.admin {
-      background: rgba(37, 99, 235, 0.12);
-      color: #1d4ed8;
-    }
-
-    .badge.success {
-      background: rgba(21, 128, 61, 0.12);
-      color: #166534;
-    }
-
-    .badge.used {
-      background: rgba(31, 42, 51, 0.08);
-      color: var(--ink-soft);
     }
 
     @media (max-width: 900px) {

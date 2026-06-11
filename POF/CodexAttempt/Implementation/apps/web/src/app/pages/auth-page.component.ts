@@ -14,24 +14,29 @@ type AuthMode = 'login' | 'register' | 'invite';
   template: `
     <div class="auth-page">
       <section class="hero">
-        <p class="eyebrow">Campus Planner</p>
-        <h1>Turn floor outlines into schedulable spaces.</h1>
-        <p class="muted">
+        <div class="brand-block">
+          <div class="brand-mark">CP</div>
+          <div class="brand-copy">
+            <p class="eyebrow">Campus Planner</p>
+            <h1 class="hero-title">Turn floor outlines into schedulable spaces.</h1>
+          </div>
+        </div>
+        <p class="muted hero-copy">
           Create an organization, model campuses and configurable spaces, and book rooms or outdoor
           areas in one-hour slots.
         </p>
       </section>
 
-      <section class="card auth-card">
-        <div class="auth-switch">
-          <button type="button" [class.ghost]="mode() !== 'login'" (click)="setMode('login')">
+      <section class="panel auth-card">
+        <div class="auth-switch role-toggle">
+          <button type="button" [class.active]="mode() === 'login'" (click)="setMode('login')">
             Sign in
           </button>
-          <button type="button" [class.ghost]="mode() !== 'register'" (click)="setMode('register')">
-            Create organization
+          <button type="button" [class.active]="mode() === 'register'" (click)="setMode('register')">
+            Create org
           </button>
-          <button type="button" [class.ghost]="mode() !== 'invite'" (click)="setMode('invite')">
-            Join with invite
+          <button type="button" [class.active]="mode() === 'invite'" (click)="setMode('invite')">
+            Join invite
           </button>
         </div>
 
@@ -144,72 +149,68 @@ type AuthMode = 'login' | 'register' | 'invite';
   styles: `
     .auth-page {
       min-height: 100vh;
-      padding: 2rem;
+      padding: 32px;
       display: grid;
       grid-template-columns: 1.2fr minmax(320px, 440px);
-      gap: 2rem;
+      gap: 32px;
       align-items: center;
     }
 
     .hero {
-      padding: 3rem;
+      padding: 24px 48px;
+      display: grid;
+      gap: 20px;
     }
 
-    .hero h1 {
-      font-size: clamp(2.5rem, 4vw, 4.5rem);
-      line-height: 0.96;
-      margin: 0 0 1rem;
-      max-width: 12ch;
+    .hero .brand-mark {
+      width: 52px;
+      height: 52px;
+      font-size: 18px;
     }
 
-    .eyebrow {
-      text-transform: uppercase;
-      letter-spacing: 0.18em;
-      font-size: 0.75rem;
-      color: var(--accent);
-      margin: 0 0 1rem;
+    .hero-title {
+      font-size: clamp(2rem, 3.4vw, 3.4rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      margin: 6px 0 0;
+      max-width: 16ch;
+    }
+
+    .hero-copy {
+      max-width: 46ch;
+      font-size: 15px;
+      line-height: 1.6;
     }
 
     .auth-card {
-      padding: 1.5rem;
+      padding: 20px;
       display: grid;
-      gap: 1rem;
+      gap: 16px;
+      box-shadow: var(--shadow);
     }
 
-    .auth-switch {
-      display: grid;
+    .auth-switch.role-toggle {
       grid-template-columns: repeat(3, 1fr);
-      gap: 0.5rem;
-    }
-
-    .auth-switch button {
-      padding: 0.7rem 0.5rem;
-      font-size: 0.92rem;
     }
 
     form {
       display: grid;
-      gap: 0.9rem;
-    }
-
-    .field-error {
-      margin: -0.45rem 0 0;
-      font-size: 0.88rem;
-      color: #7f1d1d;
+      gap: 14px;
     }
 
     .hint {
       margin: 0;
-      font-size: 0.88rem;
+      font-size: 12px;
     }
 
     @media (max-width: 900px) {
       .auth-page {
         grid-template-columns: 1fr;
+        padding: 16px;
       }
 
       .hero {
-        padding: 1rem 0;
+        padding: 8px 0;
       }
     }
   `,

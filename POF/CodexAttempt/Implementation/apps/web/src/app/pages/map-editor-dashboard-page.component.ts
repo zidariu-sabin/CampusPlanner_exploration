@@ -11,7 +11,7 @@ import { MapsService } from '../core/maps.service';
   standalone: true,
   imports: [CommonModule, RouterLink, MapPreviewComponent],
   template: `
-    <div class="page editor-dashboard">
+    <div class="screen-shell">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
@@ -19,68 +19,58 @@ import { MapsService } from '../core/maps.service';
       @if (loading()) {
         <p class="muted">Loading floor...</p>
       } @else if (map()) {
-        <section class="section-header">
-          <div>
-            <h1>{{ map()!.name }}</h1>
-            <p class="muted">
-              {{ map()!.floorLabel }} · {{ map()!.campusPlaceName }} ·
-              {{ map()!.timezone }} (timezone from campus)
-            </p>
-          </div>
-          <div class="chips">
-            <span class="chip">{{ map()!.roomCount }} rooms</span>
-            @if (map()!.backgroundImageUrl) {
-              <span class="chip">Background image</span>
-            }
-          </div>
-        </section>
+        <section class="map-layout">
+          <section class="panel">
+            <header class="panel-header">
+              <div>
+                <h3>{{ map()!.name }}</h3>
+                <p>{{ map()!.floorLabel }} · {{ map()!.campusPlaceName }}</p>
+              </div>
+              <div class="status-row">
+                <span class="badge" [class.badge-good]="map()!.roomCount > 0">
+                  {{ map()!.roomCount }} rooms
+                </span>
+                @if (map()!.backgroundImageUrl) {
+                  <span class="badge">Background image</span>
+                }
+              </div>
+            </header>
+            <div class="panel-body">
+              <app-map-preview [map]="map()!" />
+            </div>
+          </section>
 
-        <section class="grid-2 editor-dashboard-grid">
-          <article class="card preview-card">
-            <app-map-preview [map]="map()!" />
-          </article>
-
-          <article class="card panel action-panel">
-            <div>
-              <h2>Floor editor</h2>
+          <section class="panel">
+            <header class="panel-header">
+              <div>
+                <h3>Floor editor</h3>
+                <p>Align the plan, then define rooms</p>
+              </div>
+            </header>
+            <div class="panel-body">
               <p class="muted">
-                Configure the floor plan and alignment first, then define room boundaries over
-                the saved footprint.
+                Configure the floor plan and alignment first, then define room boundaries over the
+                saved footprint.
               </p>
+              <div class="dashboard-actions">
+                <a class="primary-action" [routerLink]="['/admin/floors', map()!.id, 'edit', 'map']">
+                  Floor plan &amp; alignment
+                </a>
+                <a class="primary-action" [routerLink]="['/admin/floors', map()!.id, 'edit', 'rooms']">
+                  Define rooms
+                </a>
+                <a class="secondary-action" routerLink="/admin/spaces">Back to spaces setup</a>
+              </div>
             </div>
-
-            <div class="dashboard-actions">
-              <a class="button" [routerLink]="['/admin/floors', map()!.id, 'edit', 'map']">
-                Floor plan & alignment
-              </a>
-              <a class="button" [routerLink]="['/admin/floors', map()!.id, 'edit', 'rooms']">
-                Define rooms
-              </a>
-              <a class="button ghost" routerLink="/admin/spaces">Back to spaces setup</a>
-            </div>
-          </article>
+          </section>
         </section>
       }
     </div>
   `,
   styles: `
-    .editor-dashboard,
-    .action-panel,
     .dashboard-actions {
       display: grid;
-      gap: 1.25rem;
-    }
-
-    .editor-dashboard-grid {
-      align-items: start;
-    }
-
-    .preview-card,
-    .action-panel {
-      padding: 1.25rem;
-    }
-
-    .dashboard-actions {
+      gap: 10px;
       align-content: start;
     }
   `,

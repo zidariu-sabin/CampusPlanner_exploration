@@ -13,14 +13,7 @@ import { ResourcesService } from '../core/resources.service';
   standalone: true,
   imports: [CommonModule, RouterLink],
   template: `
-    <div class="page">
-      <section class="section-header">
-        <div>
-          <h1>Hello, {{ auth.user()?.displayName || 'there' }}</h1>
-          <p class="muted">Your planned meetings and how to get to them.</p>
-        </div>
-      </section>
-
+    <div class="screen-shell">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
@@ -29,165 +22,87 @@ import { ResourcesService } from '../core/resources.service';
         <p class="muted">Loading your meetings...</p>
       } @else {
         <section class="metrics-grid">
-          <article class="card metric">
-            <strong class="metric-value">{{ todayCount() }}</strong>
-            <span class="muted">Meetings today</span>
+          <article class="metric">
+            <span>Today</span>
+            <strong>{{ todayCount() }}</strong>
           </article>
-          <article class="card metric">
-            <strong class="metric-value">{{ weekCount() }}</strong>
-            <span class="muted">This week</span>
+          <article class="metric">
+            <span>This week</span>
+            <strong>{{ weekCount() }}</strong>
           </article>
-          <article class="card metric">
-            <strong class="metric-value">{{ myBookingsCount() }}</strong>
-            <span class="muted">My bookings</span>
+          <article class="metric">
+            <span>My bookings</span>
+            <strong>{{ myBookingsCount() }}</strong>
           </article>
-          <article class="card metric">
-            <strong class="metric-value">{{ nextStartsIn() }}</strong>
-            <span class="muted">Next starts in</span>
+          <article class="metric metric-warn">
+            <span>Next starts in</span>
+            <strong>{{ nextStartsIn() }}</strong>
           </article>
         </section>
 
-        <section class="dashboard-grid">
-          <article class="card panel">
-            <div class="section-header">
+        <section class="two-column">
+          <section class="panel">
+            <header class="panel-header">
               <div>
-                <h2>My planned meetings</h2>
-                <p class="muted">Upcoming bookings you organize or are invited to.</p>
+                <h3>My planned meetings</h3>
+                <p>What is planned and where to find it</p>
+              </div>
+              <a class="secondary-action" routerLink="/book">Book a room</a>
+            </header>
+            <div class="panel-body">
+              <div class="card-list">
+                @for (meeting of upcomingMeetings(); track meeting.id; let first = $first) {
+                  <a class="member-meeting-card" [routerLink]="['/bookings', meeting.id]">
+                    <div class="meeting-time" [class.meeting-time-warn]="first">
+                      {{ hourLabel(meeting) }}
+                    </div>
+                    <div>
+                      <h3>{{ meeting.title }}</h3>
+                      <p>{{ locationLabel(meeting) }}</p>
+                      <div class="status-row">
+                        <span class="badge">{{ dayLabel(meeting) }}</span>
+                        <span class="badge" [class.badge-warn]="!isOrganizer(meeting)">
+                          {{ isOrganizer(meeting) ? 'Booked by me' : 'Invited' }}
+                        </span>
+                      </div>
+                    </div>
+                    <span class="secondary-action as-static-action">Details</span>
+                  </a>
+                } @empty {
+                  <div class="inline-form-title">
+                    <strong>No planned meetings yet</strong>
+                    <span>Book your first room to see it appear here.</span>
+                  </div>
+                  <a class="primary-action" routerLink="/book">Book your first room</a>
+                }
               </div>
             </div>
+          </section>
 
-            <div class="meeting-list">
-              @for (meeting of upcomingMeetings(); track meeting.id) {
-                <a class="meeting-row" [routerLink]="['/bookings', meeting.id]">
-                  <span class="mono meeting-time">{{ timeLabel(meeting) }}</span>
-                  <span class="meeting-main">
-                    <strong>{{ meeting.title }}</strong>
-                    <span class="muted">{{ locationLabel(meeting) }}</span>
-                  </span>
-                  <span class="chip" [class.invited]="!isOrganizer(meeting)">
-                    {{ isOrganizer(meeting) ? 'organizer' : 'invited' }}
-                  </span>
-                </a>
-              } @empty {
-                <div class="empty-state">
-                  <p class="muted">No planned meetings yet.</p>
-                  <a class="button" routerLink="/book">Book your first room</a>
-                </div>
-              }
+          <section class="panel">
+            <header class="panel-header">
+              <div>
+                <h3>Next meeting route</h3>
+                <p>{{ nextRouteSubtitle() }}</p>
+              </div>
+            </header>
+            <div class="panel-body">
+              <div class="route-steps">
+                @for (step of nextRouteSteps(); track $index) {
+                  <div class="route-step">
+                    <span>{{ $index + 1 }}</span>
+                    <p>{{ step }}</p>
+                  </div>
+                }
+              </div>
+              <a class="primary-action" routerLink="/map">Open map view</a>
             </div>
-          </article>
-
-          <div class="side-cards">
-            <article class="card panel">
-              <h2>Campus map</h2>
-              <p class="muted">
-                Explore campuses, buildings, and floors to find rooms and outdoor spaces.
-              </p>
-              <a class="button" routerLink="/map">Open map view</a>
-            </article>
-
-            <article class="card panel">
-              <h2>Need a space?</h2>
-              <p class="muted">Compare available rooms and book a one-hour slot.</p>
-              <a class="button ghost" routerLink="/book">Book a room</a>
-            </article>
-          </div>
+          </section>
         </section>
       }
     </div>
   `,
-  styles: `
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 1rem;
-    }
-
-    .metric {
-      padding: 1.1rem 1.25rem;
-      display: grid;
-      gap: 0.3rem;
-    }
-
-    .metric-value {
-      font-size: 1.45rem;
-    }
-
-    .dashboard-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
-      gap: 1rem;
-      align-items: start;
-    }
-
-    .panel {
-      padding: 1.25rem;
-      display: grid;
-      gap: 1rem;
-    }
-
-    .side-cards {
-      display: grid;
-      gap: 1rem;
-    }
-
-    .meeting-list {
-      display: grid;
-      gap: 0.7rem;
-    }
-
-    .meeting-row {
-      display: grid;
-      grid-template-columns: auto 1fr auto;
-      align-items: center;
-      gap: 1rem;
-      padding: 0.85rem 1rem;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      text-decoration: none;
-      background: rgba(255, 255, 255, 0.55);
-      transition: border-color 120ms ease, transform 120ms ease;
-    }
-
-    .meeting-row:hover {
-      border-color: var(--brand);
-      transform: translateY(-1px);
-    }
-
-    .meeting-time {
-      font-size: 0.85rem;
-      color: var(--ink-soft);
-      white-space: nowrap;
-    }
-
-    .meeting-main {
-      display: grid;
-      gap: 0.15rem;
-      min-width: 0;
-    }
-
-    .chip.invited {
-      background: rgba(194, 65, 12, 0.1);
-      color: var(--accent);
-    }
-
-    .empty-state {
-      display: grid;
-      gap: 0.8rem;
-      justify-items: start;
-      padding: 0.5rem 0;
-    }
-
-    @media (max-width: 980px) {
-      .metrics-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .dashboard-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-  `,
+  styles: ``,
 })
 export class MemberDashboardPageComponent {
   private readonly meetingsService = inject(MeetingsService);
@@ -264,10 +179,42 @@ export class MemberDashboardPageComponent {
     return meeting.createdBy.id === this.auth.user()?.id;
   }
 
-  protected timeLabel(meeting: MeetingDto): string {
-    const date = DateTime.fromISO(meeting.localDate);
-    const hour = String(meeting.hour).padStart(2, '0');
-    return `${date.toFormat('ccc d LLL')} · ${hour}:00`;
+  protected hourLabel(meeting: MeetingDto): string {
+    return `${String(meeting.hour).padStart(2, '0')}:00`;
+  }
+
+  protected dayLabel(meeting: MeetingDto): string {
+    return DateTime.fromISO(meeting.localDate).toFormat('ccc d LLL');
+  }
+
+  protected nextRouteSubtitle(): string {
+    const next = this.upcomingMeetings()[0];
+    if (!next) {
+      return 'No upcoming meeting to route to';
+    }
+    return this.locationLabel(next);
+  }
+
+  protected nextRouteSteps(): string[] {
+    const next = this.upcomingMeetings()[0];
+    if (!next) {
+      return ['Book a room to get step-by-step directions to your next meeting.'];
+    }
+
+    const resource = this.resourcesById().get(next.bookableResourceId);
+    if (!resource) {
+      return ['Open the map view to locate your next meeting.'];
+    }
+
+    const steps = [`Enter the ${resource.campusName} campus.`];
+    if (resource.campusPlaceName && resource.campusPlaceName !== resource.name) {
+      steps.push(`Walk to ${resource.campusPlaceName}.`);
+    }
+    if (resource.floorLabel) {
+      steps.push(`Take the stairs or elevator to ${resource.floorLabel}.`);
+    }
+    steps.push(`${resource.name} is reserved for ${this.hourLabel(next)}.`);
+    return steps;
   }
 
   protected locationLabel(meeting: MeetingDto): string {

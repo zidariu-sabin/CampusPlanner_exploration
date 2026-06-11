@@ -10,6 +10,8 @@ import { MapsService } from '../core/maps.service';
 interface AttentionItem {
   label: string;
   hint: string;
+  tag: string;
+  urgent: boolean;
   link: string[];
 }
 
@@ -18,218 +20,139 @@ interface AttentionItem {
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, RouterLink],
   template: `
-    <div class="page admin-dashboard">
-      <section class="section-header">
-        <div>
-          <h1>Admin dashboard</h1>
-          <p class="muted">Portfolio health, floor coverage and setup tasks for your organization.</p>
-        </div>
-        <button type="button" (click)="toggleAddCampus()">
-          {{ showAddCampus() ? 'Close' : 'Add campus' }}
-        </button>
-      </section>
-
+    <div class="screen-shell">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
 
       @if (showAddCampus()) {
-        <form class="card add-campus" [formGroup]="campusForm" (ngSubmit)="createCampus()">
-          <label>
-            Campus name
-            <input type="text" formControlName="name" placeholder="North Campus" />
-          </label>
-          <label>
-            Timezone
-            <input type="text" formControlName="timezone" placeholder="Europe/Bucharest" />
-          </label>
-          <button type="submit" [disabled]="creating() || campusForm.invalid">
-            {{ creating() ? 'Creating…' : 'Create campus' }}
-          </button>
-        </form>
+        <section class="panel">
+          <header class="panel-header">
+            <div>
+              <h3>Add campus</h3>
+              <p>Create a new campus and start configuring its footprint.</p>
+            </div>
+            <button class="secondary-action" type="button" (click)="toggleAddCampus()">Close</button>
+          </header>
+          <div class="panel-body">
+            <form class="add-campus" [formGroup]="campusForm" (ngSubmit)="createCampus()">
+              <label>
+                Campus name
+                <input type="text" formControlName="name" placeholder="North Campus" />
+              </label>
+              <label>
+                Timezone
+                <input type="text" formControlName="timezone" placeholder="Europe/Bucharest" />
+              </label>
+              <button class="primary-action" type="submit" [disabled]="creating() || campusForm.invalid">
+                {{ creating() ? 'Creating…' : 'Create campus' }}
+              </button>
+            </form>
+          </div>
+        </section>
       }
 
       @if (loading()) {
         <p class="muted">Loading dashboard…</p>
       } @else {
         <section class="metrics-grid">
-          <article class="card metric">
-            <span class="metric-value">{{ campuses().length }}</span>
-            <span class="muted">Campuses</span>
+          <article class="metric">
+            <span>Campuses</span>
+            <strong>{{ campuses().length }}</strong>
           </article>
-          <article class="card metric">
-            <span class="metric-value">{{ totalBuildings() }}</span>
-            <span class="muted">Buildings</span>
+          <article class="metric">
+            <span>Floor maps</span>
+            <strong>{{ maps().length }}</strong>
           </article>
-          <article class="card metric">
-            <span class="metric-value">{{ maps().length }}</span>
-            <span class="muted">Floor maps</span>
+          <article class="metric">
+            <span>Rooms</span>
+            <strong>{{ totalRooms() }}</strong>
           </article>
-          <article class="card metric">
-            <span class="metric-value">{{ totalRooms() }}</span>
-            <span class="muted">Rooms</span>
+          <article class="metric metric-warn">
+            <span>Open issues</span>
+            <strong>{{ attentionItems().length }}</strong>
           </article>
         </section>
 
-        <section class="grid-2 dashboard-panels">
-          <article class="card panel">
-            <div class="section-header">
-              <h2>Campus portfolio</h2>
-              <span class="chip">{{ campuses().length }} campuses</span>
-            </div>
-
-            @if (campuses().length === 0) {
-              <p class="muted">No campuses yet. Use "Add campus" to start configuring your portfolio.</p>
-            }
-
-            <div class="campus-list">
-              @for (campus of campuses(); track campus.id) {
-                <a class="campus-card" [routerLink]="['/admin/campuses', campus.id]">
-                  <div class="campus-card-head">
-                    <strong>{{ campus.name }}</strong>
-                    <span class="badge" [class.success]="isConfigured(campus)" [class.warn]="!isConfigured(campus)">
-                      {{ isConfigured(campus) ? 'configured' : 'draft' }}
-                    </span>
-                  </div>
-                  <div class="campus-stats muted">
-                    <span>{{ campus.placeCount }} spaces</span>
-                    <span>{{ campus.buildingCount }} buildings</span>
-                    <span>{{ campus.floorCount }} floors</span>
-                    <span>{{ campus.roomCount }} rooms</span>
-                  </div>
-                </a>
+        <section class="two-column">
+          <section class="panel">
+            <header class="panel-header">
+              <div>
+                <h3>Campus portfolio</h3>
+                <p>Operational status by site</p>
+              </div>
+              <button class="secondary-action" type="button" (click)="toggleAddCampus()">
+                {{ showAddCampus() ? 'Close' : 'Add campus' }}
+              </button>
+            </header>
+            <div class="panel-body">
+              @if (campuses().length === 0) {
+                <p class="muted">No campuses yet. Use “Add campus” to start configuring your portfolio.</p>
               }
+
+              <div class="card-list">
+                @for (campus of campuses(); track campus.id) {
+                  <a class="campus-card" [routerLink]="['/admin/campuses', campus.id]">
+                    <div>
+                      <h3>{{ campus.name }}</h3>
+                      <p>
+                        {{ campus.buildingCount }} buildings · {{ campus.floorCount }} floors ·
+                        {{ campus.roomCount }} rooms
+                      </p>
+                    </div>
+                    <div class="status-row">
+                      <span class="badge" [class.badge-good]="isConfigured(campus)" [class.badge-warn]="!isConfigured(campus)">
+                        {{ isConfigured(campus) ? 'Published' : 'Draft' }}
+                      </span>
+                      <span class="badge" [class.badge-warn]="issueCount(campus) > 0">
+                        {{ issueCount(campus) }} issues
+                      </span>
+                    </div>
+                  </a>
+                }
+              </div>
             </div>
-          </article>
+          </section>
 
-          <article class="card panel">
-            <div class="section-header">
-              <h2>Attention queue</h2>
-              <span class="chip">{{ attentionItems().length }} open</span>
-            </div>
-
-            @if (attentionItems().length === 0) {
-              <p class="message success">Nothing needs attention. The portfolio is fully configured.</p>
-            }
-
-            <div class="attention-list">
-              @for (item of attentionItems(); track item.label) {
-                <a class="attention-row" [routerLink]="item.link">
-                  <strong>{{ item.label }}</strong>
-                  <span class="muted">{{ item.hint }}</span>
-                </a>
+          <section class="panel">
+            <header class="panel-header">
+              <div>
+                <h3>Attention queue</h3>
+                <p>Work that blocks publishing</p>
+              </div>
+            </header>
+            <div class="panel-body">
+              @if (attentionItems().length === 0) {
+                <p class="message success">Nothing needs attention. The portfolio is fully configured.</p>
               }
+
+              <div class="task-list">
+                @for (item of attentionItems(); track item.label) {
+                  <a class="task" [routerLink]="item.link" [title]="item.hint">
+                    <span>{{ item.label }}</span>
+                    <span class="badge" [class.badge-warn]="item.urgent">{{ item.tag }}</span>
+                  </a>
+                }
+              </div>
             </div>
-          </article>
+          </section>
         </section>
       }
     </div>
   `,
   styles: `
-    .admin-dashboard {
-      display: grid;
-      gap: 1.5rem;
-    }
-
     .add-campus {
-      padding: 1.25rem;
       display: grid;
       grid-template-columns: 1.4fr 1fr auto;
-      gap: 1rem;
+      gap: 12px;
       align-items: end;
     }
 
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 1rem;
-    }
-
-    .metric {
-      padding: 1.25rem;
-      display: grid;
-      gap: 0.25rem;
-    }
-
-    .metric-value {
-      font-size: 2rem;
-      font-weight: 700;
-    }
-
-    .panel {
-      padding: 1.25rem;
-      display: grid;
-      gap: 1rem;
-      align-content: start;
-    }
-
-    .dashboard-panels {
-      align-items: start;
-    }
-
-    .campus-list,
-    .attention-list {
-      display: grid;
-      gap: 0.75rem;
-    }
-
-    .campus-card,
-    .attention-row {
-      display: grid;
-      gap: 0.45rem;
-      padding: 0.9rem 1rem;
-      border-radius: 18px;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.6);
-      text-decoration: none;
-      transition: transform 120ms ease, box-shadow 120ms ease;
-    }
-
-    .campus-card:hover,
-    .attention-row:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 12px 28px rgba(31, 42, 51, 0.1);
-    }
-
-    .campus-card-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .campus-stats {
-      display: flex;
-      gap: 0.9rem;
-      flex-wrap: wrap;
-      font-size: 0.88rem;
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 0.25rem 0.65rem;
-      border-radius: 999px;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .badge.success {
-      background: rgba(21, 128, 61, 0.12);
-      color: #166534;
-    }
-
-    .badge.warn {
-      background: rgba(194, 65, 12, 0.12);
-      color: var(--accent);
+    .add-campus button {
+      align-self: end;
     }
 
     @media (max-width: 900px) {
-      .metrics-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
       .add-campus {
         grid-template-columns: 1fr;
       }
@@ -270,6 +193,8 @@ export class AdminDashboardPageComponent {
         items.push({
           label: `Configure campus bounds for ${campus.name}`,
           hint: 'Draw the campus boundary on the map to anchor its spaces.',
+          tag: 'Geometry',
+          urgent: true,
           link: ['/admin/campuses', campus.id],
         });
       }
@@ -278,6 +203,8 @@ export class AdminDashboardPageComponent {
         items.push({
           label: `Add configurable spaces to ${campus.name}`,
           hint: 'No buildings, fields or other spaces are defined yet.',
+          tag: 'Spaces',
+          urgent: false,
           link: ['/admin/campuses', campus.id],
         });
       }
@@ -288,6 +215,8 @@ export class AdminDashboardPageComponent {
         items.push({
           label: `Define rooms for ${map.campusPlaceName} ${map.name}`,
           hint: 'This floor map has no rooms and cannot be booked.',
+          tag: 'Import',
+          urgent: false,
           link: ['/admin/floors', map.id, 'edit', 'rooms'],
         });
       }
@@ -295,6 +224,17 @@ export class AdminDashboardPageComponent {
 
     return items;
   });
+
+  protected issueCount(campus: CampusSummaryDto): number {
+    let count = 0;
+    if (!campus.boundaryGeoJson) {
+      count += 1;
+    }
+    if (campus.placeCount === 0) {
+      count += 1;
+    }
+    return count;
+  }
 
   constructor() {
     void this.load();
