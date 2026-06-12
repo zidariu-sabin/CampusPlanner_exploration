@@ -21,13 +21,13 @@ import {
   type GeoJsonPosition,
   unprojectGeoJsonPosition,
 } from '@campus/contracts';
+// rotationDegrees is consumed directly; quarter-turn conversion is no longer needed.
 import type mapboxglDefault from 'mapbox-gl';
-import type { ImageSource, Map as MapboxMap } from 'mapbox-gl';
-import type { Feature, Polygon } from 'geojson';
+import type { GeoJSONSource, ImageSource, Map as MapboxMap, MapMouseEvent } from 'mapbox-gl';
+import type { Feature, FeatureCollection, Polygon } from 'geojson';
 
 import {
   getBackgroundImageRect,
-  quarterTurnsToDegrees,
   type BackgroundImageEditDraft,
 } from '../core/background-image-editor';
 import { environment } from '../../environments/environment';
@@ -36,20 +36,34 @@ const SAMPLE_CENTER: [number, number] = [23.830052, 44.297575];
 const DEFAULT_ZOOM = 18;
 const PLAN_IMAGE_SOURCE_ID = 'campus-plan-image';
 const PLAN_IMAGE_LAYER_ID = 'campus-plan-image-layer';
+const REFERENCE_SOURCE_ID = 'footprint-reference-source';
+const REFERENCE_FILL_LAYER_ID = 'footprint-reference-fill';
+const REFERENCE_LINE_LAYER_ID = 'footprint-reference-line';
+const SPACES_SOURCE_ID = 'footprint-spaces-source';
+const SPACES_FILL_LAYER_ID = 'footprint-spaces-fill';
+const SPACES_LINE_LAYER_ID = 'footprint-spaces-line';
+const SPACES_LABEL_LAYER_ID = 'footprint-spaces-label';
+
+export interface SelectableFootprint {
+  id: string;
+  footprint: GeoJsonPolygon;
+  name?: string;
+  building?: boolean;
+}
 
 type MapStyleKey = 'standard-satellite' | 'streets';
 
 const MAP_STYLES: Array<{ key: MapStyleKey; label: string; url: string }> = [
+  { key: 'streets', label: 'Streets', url: 'mapbox://styles/mapbox/streets-v12' },
   {
     key: 'standard-satellite',
     label: 'Satellite',
-    url: 'mapbox://styles/mapbox/standard-satellite',
+    url: 'mapbox://styles/mapbox/satellite-streets-v12',
   },
-  { key: 'streets', label: 'Streets', url: 'mapbox://styles/mapbox/streets-v12' },
 ];
 
 const DEFAULT_STYLE_KEY =
-  MAP_STYLES.find((style) => style.url === environment.mapboxStyleUrl)?.key ?? 'standard-satellite';
+  MAP_STYLES.find((style) => style.url === environment.mapboxStyleUrl)?.key ?? 'streets';
 
 @Component({
   selector: 'app-mapbox-footprint-picker',
@@ -200,7 +214,19 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
   @Input() footprint: GeoJsonPolygon | null = null;
   @Input() backgroundUrl: string | null = null;
   @Input() backgroundDraft: BackgroundImageEditDraft | null = null;
+  /**
+   * Optional non-editable reference outline (e.g. the campus boundary) drawn
+   * beneath the editable footprint so the user can position spaces correctly.
+   */
+  @Input() referenceFootprint: GeoJsonPolygon | null = null;
+  /**
+   * Other already-defined footprints shown as non-editable but clickable
+   * outlines. Clicking one emits `footprintSelected` so the host can make that
+   * footprint the editable one.
+   */
+  @Input() selectableFootprints: SelectableFootprint[] = [];
   @Output() readonly footprintChange = new EventEmitter<GeoJsonPolygon>();
+  @Output() readonly footprintSelected = new EventEmitter<string>();
 
   @ViewChild('mapContainer')
   private mapContainer?: ElementRef<HTMLDivElement>;
@@ -224,13 +250,37 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
 
   private readonly onStyleLoaded = (): void => {
     this.mapLoaded = true;
+    this.syncReferenceLayer();
+    this.syncSpacesLayer();
     this.syncPlanImageOverlay();
     this.syncDrawFromInput(true, true);
+    if (!this.footprint && this.referenceFootprint) {
+      this.fitToFootprint(this.referenceFootprint);
+    }
     this.map?.resize();
   };
 
   private readonly onDrawChanged = (): void => {
     this.syncFootprintFromDraw();
+  };
+
+  private readonly onSpaceClick = (event: MapMouseEvent): void => {
+    const id = event.features?.[0]?.properties?.['footprintId'];
+    if (typeof id === 'string') {
+      this.footprintSelected.emit(id);
+    }
+  };
+
+  private readonly onSpaceEnter = (): void => {
+    if (this.map) {
+      this.map.getCanvas().style.cursor = 'pointer';
+    }
+  };
+
+  private readonly onSpaceLeave = (): void => {
+    if (this.map) {
+      this.map.getCanvas().style.cursor = '';
+    }
   };
 
   ngAfterViewInit(): void {
@@ -245,6 +295,17 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
 
     if ('backgroundUrl' in changes || 'backgroundDraft' in changes) {
       this.syncPlanImageOverlay();
+    }
+
+    if ('referenceFootprint' in changes) {
+      this.syncReferenceLayer();
+      if (!this.footprint && this.referenceFootprint) {
+        this.fitToFootprint(this.referenceFootprint);
+      }
+    }
+
+    if ('selectableFootprints' in changes) {
+      this.syncSpacesLayer();
     }
   }
 
@@ -363,6 +424,9 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
       this.map.on('style.load', this.onStyleLoaded);
       this.map.on('draw.create', this.onDrawChanged);
       this.map.on('draw.update', this.onDrawChanged);
+      this.map.on('click', SPACES_FILL_LAYER_ID, this.onSpaceClick);
+      this.map.on('mouseenter', SPACES_FILL_LAYER_ID, this.onSpaceEnter);
+      this.map.on('mouseleave', SPACES_FILL_LAYER_ID, this.onSpaceLeave);
     } catch (error) {
       this.error.set(error instanceof Error ? error.message : 'Mapbox could not be loaded.');
     }
@@ -453,6 +517,151 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
     }
   }
 
+  private syncReferenceLayer(): void {
+    const map = this.map;
+    if (!map || !this.mapLoaded) {
+      return;
+    }
+
+    if (!this.referenceFootprint) {
+      this.removeReferenceLayer();
+      return;
+    }
+
+    const data = {
+      type: 'Feature',
+      properties: {},
+      geometry: this.referenceFootprint,
+    } satisfies Feature<Polygon>;
+
+    const source = map.getSource(REFERENCE_SOURCE_ID) as GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data);
+      return;
+    }
+
+    // Insert beneath the mapbox-gl-draw layers so the editable footprint and its
+    // vertices stay interactive and on top of the reference outline.
+    const sat = this.selectedStyle() === 'standard-satellite';
+    const beforeId = this.firstDrawLayerId();
+    map.addSource(REFERENCE_SOURCE_ID, { type: 'geojson', data });
+    map.addLayer(
+      {
+        id: REFERENCE_FILL_LAYER_ID,
+        type: 'fill',
+        source: REFERENCE_SOURCE_ID,
+        paint: { 'fill-color': '#0f766e', 'fill-opacity': sat ? 0.12 : 0.08 },
+      },
+      beforeId,
+    );
+    map.addLayer(
+      {
+        id: REFERENCE_LINE_LAYER_ID,
+        type: 'line',
+        source: REFERENCE_SOURCE_ID,
+        paint: {
+          'line-color': sat ? '#ffffff' : '#0f3d3e',
+          'line-width': sat ? 3.5 : 2.5,
+          'line-dasharray': [2, 1.5],
+        },
+      },
+      beforeId,
+    );
+  }
+
+  private removeReferenceLayer(): void {
+    const map = this.map;
+    if (!map) {
+      return;
+    }
+    if (map.getLayer(REFERENCE_LINE_LAYER_ID)) {
+      map.removeLayer(REFERENCE_LINE_LAYER_ID);
+    }
+    if (map.getLayer(REFERENCE_FILL_LAYER_ID)) {
+      map.removeLayer(REFERENCE_FILL_LAYER_ID);
+    }
+    if (map.getSource(REFERENCE_SOURCE_ID)) {
+      map.removeSource(REFERENCE_SOURCE_ID);
+    }
+  }
+
+  private firstDrawLayerId(): string | undefined {
+    const map = this.map;
+    if (!map) {
+      return undefined;
+    }
+    const layers = map.getStyle()?.layers ?? [];
+    return layers.find((layer) => layer.id.startsWith('gl-draw'))?.id;
+  }
+
+  private syncSpacesLayer(): void {
+    const map = this.map;
+    if (!map || !this.mapLoaded) {
+      return;
+    }
+
+    const data: FeatureCollection<Polygon> = {
+      type: 'FeatureCollection',
+      features: this.selectableFootprints.map((space) => ({
+        type: 'Feature',
+        properties: {
+          footprintId: space.id,
+          name: space.name ?? '',
+          building: space.building ?? false,
+        },
+        geometry: space.footprint as Polygon,
+      })),
+    };
+
+    const source = map.getSource(SPACES_SOURCE_ID) as GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data);
+      return;
+    }
+
+    const sat = this.selectedStyle() === 'standard-satellite';
+    const beforeId = this.firstDrawLayerId();
+    map.addSource(SPACES_SOURCE_ID, { type: 'geojson', data });
+    map.addLayer(
+      {
+        id: SPACES_FILL_LAYER_ID,
+        type: 'fill',
+        source: SPACES_SOURCE_ID,
+        paint: {
+          'fill-color': ['case', ['get', 'building'], '#0f766e', '#d97706'],
+          'fill-opacity': sat ? 0.42 : 0.22,
+        },
+      },
+      beforeId,
+    );
+    map.addLayer(
+      {
+        id: SPACES_LINE_LAYER_ID,
+        type: 'line',
+        source: SPACES_SOURCE_ID,
+        paint: {
+          'line-color': sat ? '#ffffff' : ['case', ['get', 'building'], '#0f3d3e', '#92400e'],
+          'line-width': sat ? 3 : 2,
+        },
+      },
+      beforeId,
+    );
+    map.addLayer(
+      {
+        id: SPACES_LABEL_LAYER_ID,
+        type: 'symbol',
+        source: SPACES_SOURCE_ID,
+        layout: { 'text-field': ['get', 'name'], 'text-size': 12 },
+        paint: {
+          'text-color': sat ? '#ffffff' : '#172026',
+          'text-halo-color': sat ? '#0b1f24' : '#ffffff',
+          'text-halo-width': sat ? 1.8 : 1.4,
+        },
+      },
+      beforeId,
+    );
+  }
+
   private getPlanImageCoordinates():
     | [[number, number], [number, number], [number, number], [number, number]]
     | null {
@@ -469,8 +678,7 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
     );
     const centerX = rect.x + rect.width / 2;
     const centerY = rect.y + rect.height / 2;
-    const rotationRadians =
-      (quarterTurnsToDegrees(this.backgroundDraft.rotationQuarterTurns) * Math.PI) / 180;
+    const rotationRadians = (this.backgroundDraft.rotationDegrees * Math.PI) / 180;
     const corners: GeoJsonPosition[] = [
       [rect.x, rect.y],
       [rect.x + rect.width, rect.y],

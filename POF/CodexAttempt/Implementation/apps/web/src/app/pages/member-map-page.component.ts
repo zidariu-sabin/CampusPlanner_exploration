@@ -2,17 +2,14 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
-  BoundingBox,
   CampusDto,
   CampusPlaceDto,
   CampusSummaryDto,
   FloorMapDto,
   FloorMapSummaryDto,
-  getProjectedBoundingBox,
-  projectedPolygonToPointsAttribute,
 } from '@campus/contracts';
 
-import { MapboxMapViewComponent } from '../components/mapbox-map-view.component';
+import { MemberMapboxViewComponent } from '../components/member-mapbox-view.component';
 import { CampusesService } from '../core/campuses.service';
 import { FloorsService } from '../core/floors.service';
 import { MapsService } from '../core/maps.service';
@@ -20,7 +17,7 @@ import { MapsService } from '../core/maps.service';
 @Component({
   selector: 'app-member-map-page',
   standalone: true,
-  imports: [CommonModule, MapboxMapViewComponent],
+  imports: [CommonModule, MemberMapboxViewComponent],
   template: `
     <div class="screen-shell">
       @if (error()) {
@@ -136,11 +133,30 @@ import { MapsService } from '../core/maps.service';
           </div>
         </section>
 
-        <section class="map-panel canvas">
-          @if (floorMap(); as map) {
-            <app-mapbox-map-view
-              [map]="map"
+        <section class="panel canvas">
+          <header class="panel-header">
+            <div>
+              <h3>{{ canvasTitle() }}</h3>
+              <p>{{ canvasSubtitle() }}</p>
+            </div>
+            @if (loadingFloorMap()) {
+              <span class="badge">Loading floor…</span>
+            } @else if (selectedCampus()) {
+              <span class="badge badge-good">{{ selectedCampus()!.placeCount }} spaces</span>
+            } @else {
+              <span class="badge">{{ campuses().length }} campuses</span>
+            }
+          </header>
+          <div class="panel-body">
+            <app-member-mapbox-view
+              [campuses]="campuses()"
+              [selectedCampus]="selectedCampus()"
+              [floorMap]="floorMap()"
+              [selectedCampusId]="selectedCampus()?.id ?? null"
+              [selectedPlaceId]="selectedPlace()?.id ?? null"
               [selectedRoomId]="selectedRoomId()"
+              (campusSelected)="onCampusSelected($event)"
+              (placeSelected)="onPlaceSelected($event)"
               (roomSelected)="onRoomSelected($event)"
             />
 
@@ -148,7 +164,9 @@ import { MapsService } from '../core/maps.service';
               <div class="room-bar">
                 <div>
                   <strong>{{ room.name }}</strong>
-                  <p class="muted">{{ map.campusPlaceName }} · {{ map.floorLabel }}</p>
+                  <p class="muted">
+                    {{ floorMap()?.campusPlaceName }} · {{ floorMap()?.floorLabel }}
+                  </p>
                 </div>
                 @if (room.bookableResourceId) {
                   <button class="primary-action" type="button" (click)="bookResource(room.bookableResourceId)">
@@ -159,51 +177,7 @@ import { MapsService } from '../core/maps.service';
                 }
               </div>
             }
-
-            <div class="floating-toolbar">
-              <button type="button" class="active">{{ map.floorLabel }}</button>
-            </div>
-          } @else if (loadingFloorMap()) {
-            <p class="muted canvas-message">Loading floor map...</p>
-          } @else if (selectedCampus(); as campus) {
-            @if (places().length > 0) {
-              <svg class="campus-svg" [attr.viewBox]="campusViewBox()">
-                @for (place of places(); track place.id) {
-                  <g
-                    class="clickable-map-feature"
-                    (click)="selectPlace(place)"
-                  >
-                    <polygon
-                      [class]="place.buildingId ? 'building' : 'outdoor'"
-                      [class.selected-place]="place.id === selectedPlace()?.id"
-                      [class.muted-space]="selectedPlace() && place.id !== selectedPlace()?.id"
-                      [attr.points]="placePoints(place)"
-                    />
-                    <text [attr.x]="placeLabelX(place)" [attr.y]="placeLabelY(place)">
-                      {{ place.name }}
-                    </text>
-                  </g>
-                }
-                <text class="map-title-label" [attr.x]="campusTitleX()" [attr.y]="campusTitleY()">
-                  {{ campus.name }}
-                </text>
-              </svg>
-              <div class="floating-toolbar">
-                <button type="button" class="active">Campus</button>
-                <span class="badge badge-good">Spaces loaded</span>
-              </div>
-            } @else {
-              <p class="muted canvas-message">Nothing to draw yet for this campus.</p>
-            }
-          } @else {
-            <div class="empty-canvas">
-              <strong>Pick a campus</strong>
-              <p class="muted">
-                The map keeps the parent context in the selection summary while you drill into
-                spaces, floors, and rooms.
-              </p>
-            </div>
-          }
+          </div>
         </section>
       </section>
     </div>
@@ -211,33 +185,6 @@ import { MapsService } from '../core/maps.service';
   styles: `
     .canvas {
       min-height: 540px;
-      display: grid;
-      align-content: start;
-      gap: 12px;
-    }
-
-    .campus-svg {
-      width: 100%;
-      min-height: 440px;
-      display: block;
-    }
-
-    .place-shape,
-    polygon.building,
-    polygon.outdoor {
-      cursor: pointer;
-      transition: stroke-width 120ms ease;
-    }
-
-    polygon.selected-place {
-      stroke-width: 5;
-      fill: var(--blue-soft);
-      stroke: var(--blue);
-    }
-
-    .place-label,
-    .canvas text {
-      pointer-events: none;
     }
 
     .room-bar {
@@ -249,20 +196,7 @@ import { MapsService } from '../core/maps.service';
       padding: 12px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #fff;
-    }
-
-    .canvas-message,
-    .empty-canvas {
-      display: grid;
-      gap: 6px;
-      padding: 48px 16px;
-      place-items: center;
-      text-align: center;
-    }
-
-    .empty-canvas strong {
-      font-size: 17px;
+      background: #fbfcfc;
     }
   `,
 })
@@ -333,7 +267,12 @@ export class MemberMapPageComponent {
 
     this.loadingFloors.set(true);
     try {
-      this.floors.set(await this.floorsService.listForBuilding(place.buildingId));
+      const floors = await this.floorsService.listForBuilding(place.buildingId);
+      this.floors.set(floors);
+      // Reveal the first floor's rooms immediately so the layer is visible on selection.
+      if (floors.length > 0) {
+        await this.selectFloor(floors[0]);
+      }
     } catch (error) {
       this.error.set(extractMessage(error));
     } finally {
@@ -365,6 +304,43 @@ export class MemberMapPageComponent {
     this.selectedRoomId.set(roomId);
   }
 
+  protected onCampusSelected(campusId: string): void {
+    const campus = this.campuses().find((item) => item.id === campusId);
+    if (campus) {
+      void this.selectCampus(campus);
+    }
+  }
+
+  protected onPlaceSelected(placeId: string): void {
+    const place = this.places().find((item) => item.id === placeId);
+    if (place) {
+      void this.selectPlace(place);
+    }
+  }
+
+  protected canvasTitle(): string {
+    const floor = this.selectedFloor();
+    const place = this.selectedPlace();
+    const campus = this.selectedCampus();
+    if (place && floor) {
+      return `${place.name} · ${floor.floorLabel}`;
+    }
+    if (campus) {
+      return campus.name;
+    }
+    return 'Organization map';
+  }
+
+  protected canvasSubtitle(): string {
+    if (this.selectedFloor()) {
+      return 'Click a room to see its details or book it.';
+    }
+    if (this.selectedCampus()) {
+      return 'Click a building or space to drill into its floors and rooms.';
+    }
+    return 'Click a campus to load its spaces and rooms.';
+  }
+
   protected bookResource(resourceId: string | null): void {
     if (resourceId) {
       void this.router.navigate(['/book', resourceId]);
@@ -389,51 +365,6 @@ export class MemberMapPageComponent {
       return campus.name;
     }
     return 'Choose a campus to inspect';
-  }
-
-  protected campusTitleX(): number {
-    const box = this.campusBounds();
-    return box.minX + box.width / 2;
-  }
-
-  protected campusTitleY(): number {
-    const box = this.campusBounds();
-    const padY = Math.max(box.height * 0.08, 24);
-    return box.minY - padY / 2;
-  }
-
-  protected campusViewBox(): string {
-    const box = this.campusBounds();
-    const padX = Math.max(box.width * 0.08, 24);
-    const padY = Math.max(box.height * 0.08, 24);
-    return `${box.minX - padX} ${box.minY - padY} ${box.width + padX * 2} ${box.height + padY * 2}`;
-  }
-
-  protected placePoints(place: CampusPlaceDto): string {
-    return projectedPolygonToPointsAttribute(place.footprintGeoJson);
-  }
-
-  protected placeLabelX(place: CampusPlaceDto): number {
-    return getProjectedBoundingBox(place.footprintGeoJson).minX + 6;
-  }
-
-  protected placeLabelY(place: CampusPlaceDto): number {
-    const box = getProjectedBoundingBox(place.footprintGeoJson);
-    return box.minY + Math.min(Math.max(box.height * 0.3, 14), 22);
-  }
-
-  private campusBounds(): BoundingBox {
-    const boxes = this.places().map((place) => getProjectedBoundingBox(place.footprintGeoJson));
-    if (boxes.length === 0) {
-      return { minX: 0, minY: 0, maxX: 100, maxY: 100, width: 100, height: 100 };
-    }
-
-    const minX = Math.min(...boxes.map((box) => box.minX));
-    const minY = Math.min(...boxes.map((box) => box.minY));
-    const maxX = Math.max(...boxes.map((box) => box.maxX));
-    const maxY = Math.max(...boxes.map((box) => box.maxY));
-
-    return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
   }
 
   private clearFloorSelection(): void {

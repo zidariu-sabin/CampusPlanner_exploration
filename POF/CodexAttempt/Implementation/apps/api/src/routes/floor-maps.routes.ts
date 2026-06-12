@@ -44,7 +44,7 @@ const replaceRoomsSchema = z.object({
 
 const processBackgroundImageSchema = z
   .object({
-    rotationQuarterTurns: z.number().int().min(0).max(3),
+    rotationDegrees: z.number().finite().min(-360).max(360),
     scale: z.number().positive().min(0.25).max(3),
     offsetX: z.number().finite().min(-2).max(2),
     offsetY: z.number().finite().min(-2).max(2),
@@ -54,6 +54,8 @@ const processBackgroundImageSchema = z
       width: z.number().finite().positive().max(1),
       height: z.number().finite().positive().max(1),
     }),
+    flipHorizontal: z.boolean().optional().default(false),
+    flipVertical: z.boolean().optional().default(false),
   })
   .superRefine((body, context) => {
     if (body.cropRect.x + body.cropRect.width > 1) {

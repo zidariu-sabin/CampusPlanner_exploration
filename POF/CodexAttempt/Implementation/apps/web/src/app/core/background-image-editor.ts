@@ -15,14 +15,29 @@ export type CanvasMode = 'rooms' | 'image' | 'crop';
 
 export interface BackgroundImageEditDraft {
   scale: number;
-  rotationQuarterTurns: number;
+  /** Free rotation in degrees, applied clockwise about the image centre. */
+  rotationDegrees: number;
   offsetX: number;
   offsetY: number;
   cropRect: EditorRectangle;
+  /** Display-only opacity used while aligning the image over the footprint. */
+  opacity: number;
+  flipHorizontal: boolean;
+  flipVertical: boolean;
 }
 
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 3;
+
+/** Default alignment opacity so the footprint stays visible through the image. */
+export const DEFAULT_IMAGE_OPACITY = 0.8;
+
+export function clampOpacity(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_IMAGE_OPACITY;
+  }
+  return Math.min(Math.max(value, 0.1), 1);
+}
 
 export function clampBackgroundScale(value: number): number {
   if (!Number.isFinite(value)) {
@@ -95,21 +110,32 @@ export function toNormalizedRectangle(
   };
 }
 
+export function normalizeRotationDegrees(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return ((value % 360) + 360) % 360;
+}
+
 export function toBackgroundProcessRequest(
   bounds: BoundingBox,
   draft: {
-    rotationQuarterTurns: number;
+    rotationDegrees: number;
     scale: number;
     offsetX: number;
     offsetY: number;
     cropRect: EditorRectangle;
+    flipHorizontal?: boolean;
+    flipVertical?: boolean;
   },
 ): ProcessBackgroundImageRequest {
   return {
-    rotationQuarterTurns: ((Math.trunc(draft.rotationQuarterTurns) % 4) + 4) % 4,
+    rotationDegrees: normalizeRotationDegrees(draft.rotationDegrees),
     scale: clampBackgroundScale(draft.scale),
     offsetX: bounds.width > 0 ? draft.offsetX / bounds.width : 0,
     offsetY: bounds.height > 0 ? draft.offsetY / bounds.height : 0,
     cropRect: toNormalizedRectangle(bounds, clampCropRect(draft.cropRect, bounds)),
+    flipHorizontal: draft.flipHorizontal ?? false,
+    flipVertical: draft.flipVertical ?? false,
   };
 }

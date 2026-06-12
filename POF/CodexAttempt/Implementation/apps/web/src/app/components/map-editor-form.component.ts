@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import {
@@ -21,6 +21,7 @@ import {
 import {
   type BackgroundImageEditDraft,
   type CanvasMode,
+  DEFAULT_IMAGE_OPACITY,
   createDefaultCropRect,
   toBackgroundProcessRequest,
 } from '../core/background-image-editor';
@@ -76,6 +77,11 @@ export type MapEditorWorkflow = 'map' | 'rooms';
         @if (workflow === 'map') {
           <article class="card panel form-panel">
             <h2>Floor settings</h2>
+            @if (lockFootprint) {
+              <p class="muted timezone-note">
+                The footprint is fixed to the building outline. Upload and align the floor-plan image only.
+              </p>
+            }
             <label>Name <input [(ngModel)]="name" /></label>
             <label>Floor label <input [(ngModel)]="floorLabel" /></label>
             @if (timezoneDisplay()) {
@@ -83,10 +89,12 @@ export type MapEditorWorkflow = 'map' | 'rooms';
                 Timezone: {{ timezoneDisplay() }} (read-only, derived from the campus)
               </p>
             }
-            <label>
-              Footprint GeoJSON
-              <textarea [(ngModel)]="footprintText"></textarea>
-            </label>
+            @if (!lockFootprint) {
+              <label>
+                Footprint GeoJSON
+                <textarea [(ngModel)]="footprintText"></textarea>
+              </label>
+            }
             <label>
               Background image
               <input type="file" accept="image/*" (change)="onBackgroundSelected($event)" />
@@ -107,11 +115,13 @@ export type MapEditorWorkflow = 'map' | 'rooms';
             />
 
             <div class="actions">
-              <button type="button" class="ghost" (click)="loadSampleFootprint()">
-                Use sample footprint
-              </button>
+              @if (!lockFootprint) {
+                <button type="button" class="ghost" (click)="loadSampleFootprint()">
+                  Use sample footprint
+                </button>
+              }
               <button type="button" (click)="saveMap()">Save floor</button>
-              @if (mapId()) {
+              @if (mapId() && !lockFootprint) {
                 <a class="button ghost" [routerLink]="['/admin/floors', mapId(), 'edit', 'rooms']">
                   Define rooms
                 </a>
@@ -162,7 +172,7 @@ export type MapEditorWorkflow = 'map' | 'rooms';
 
           <p class="muted canvas-mode-hint">{{ canvasModeHint() }}</p>
 
-          @if (workflow === 'map') {
+          @if (workflow === 'map' && !lockFootprint) {
             <app-mapbox-footprint-picker
               [footprint]="parsedFootprint()"
               [backgroundUrl]="backgroundUrl()"
@@ -394,12 +404,22 @@ export class MapEditorFormComponent implements OnInit {
   @Input() embedded = false;
   @Input() workflow: MapEditorWorkflow = 'map';
 
+  /**
+   * When true the footprint is treated as fixed (the building outline): footprint
+   * text/draw controls are hidden and the step focuses purely on uploading and
+   * aligning the floor-plan image.
+   */
+  @Input() lockFootprint = false;
+
   /** Building under which a new floor is created (creation flow only). */
   @Input() buildingId: string | null = null;
 
   /** Optional campus/place used to seed the initial footprint when creating a floor. */
   @Input() seedCampusId: string | null = null;
   @Input() seedPlaceId: string | null = null;
+
+  /** Emitted after a floor is created or updated (lets embedded hosts react inline). */
+  @Output() readonly floorSaved = new EventEmitter<FloorMapDto>();
 
   protected name = 'Main Campus Floor';
   protected floorLabel = 'Ground Floor';
@@ -415,10 +435,13 @@ export class MapEditorFormComponent implements OnInit {
   );
   protected readonly backgroundDraft = signal<BackgroundImageEditDraft>({
     scale: 1,
-    rotationQuarterTurns: 0,
+    rotationDegrees: 0,
     offsetX: 0,
     offsetY: 0,
     cropRect: createDefaultCropRect(this.bounds()),
+    opacity: DEFAULT_IMAGE_OPACITY,
+    flipHorizontal: false,
+    flipVertical: false,
   });
 
   private currentMap: FloorMapDto | null = null;
@@ -429,6 +452,9 @@ export class MapEditorFormComponent implements OnInit {
     this.resetBackgroundEdits();
     if (this.workflow === 'rooms') {
       this.canvasMode.set('rooms');
+    } else if (this.lockFootprint) {
+      // Image-only step: start in image-alignment mode over the fixed footprint.
+      this.canvasMode.set('image');
     }
 
     if (this.mapId()) {
@@ -578,7 +604,7 @@ export class MapEditorFormComponent implements OnInit {
 
     switch (this.canvasMode()) {
       case 'image':
-        return 'Drag anywhere on the canvas to move the background image under the footprint.';
+        return 'Drag the image to move it, drag a corner to resize, or use the top handle to rotate it onto the footprint. Adjust opacity to align precisely.';
       case 'crop':
         return 'Move the crop frame or drag its handles. Leaving crop mode shows the final cropped preview.';
       default:
@@ -589,17 +615,20 @@ export class MapEditorFormComponent implements OnInit {
   protected rotateBackground(direction: number): void {
     this.backgroundDraft.update((draft) => ({
       ...draft,
-      rotationQuarterTurns: (((draft.rotationQuarterTurns + direction) % 4) + 4) % 4,
+      rotationDegrees: draft.rotationDegrees + direction * 90,
     }));
   }
 
   protected resetBackgroundEdits(): void {
     this.backgroundDraft.set({
       scale: 1,
-      rotationQuarterTurns: 0,
+      rotationDegrees: 0,
       offsetX: 0,
       offsetY: 0,
       cropRect: createDefaultCropRect(this.bounds()),
+      opacity: DEFAULT_IMAGE_OPACITY,
+      flipHorizontal: false,
+      flipVertical: false,
     });
   }
 
@@ -746,7 +775,9 @@ export class MapEditorFormComponent implements OnInit {
 
       this.resetBackgroundEdits();
       this.message.set('Floor saved.');
-      if (isNewMap) {
+      this.floorSaved.emit(this.currentMap);
+      // Embedded hosts handle the new floor inline; only the standalone page navigates.
+      if (isNewMap && !this.embedded) {
         await this.router.navigate(['/admin/floors', this.currentMap.id, 'edit', 'rooms']);
       }
     } catch (error) {
@@ -775,11 +806,13 @@ export class MapEditorFormComponent implements OnInit {
       this.currentMap = await this.mapsService.processBackground(
         mapId,
         toBackgroundProcessRequest(this.bounds(), {
-          rotationQuarterTurns: draft.rotationQuarterTurns,
+          rotationDegrees: draft.rotationDegrees,
           scale: draft.scale,
           offsetX: draft.offsetX,
           offsetY: draft.offsetY,
           cropRect: draft.cropRect,
+          flipHorizontal: draft.flipHorizontal,
+          flipVertical: draft.flipVertical,
         }),
       );
       this.pendingBackgroundUrl = null;

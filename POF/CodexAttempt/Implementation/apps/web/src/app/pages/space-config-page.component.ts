@@ -6,18 +6,28 @@ import {
   CampusDto,
   CampusPlaceDto,
   CampusSummaryDto,
+  FloorMapDto,
   FloorMapSummaryDto,
 } from '@campus/contracts';
 
+import { MapEditorFormComponent } from '../components/map-editor-form.component';
+import { MemberMapboxViewComponent } from '../components/member-mapbox-view.component';
 import { CampusesService } from '../core/campuses.service';
 import { FloorsService } from '../core/floors.service';
+import { MapsService } from '../core/maps.service';
 
-type SpaceConfigPanel = 'select' | 'review';
+type SpaceConfigPanel = 'select' | 'align' | 'review';
 
 @Component({
   selector: 'app-space-config-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterLink,
+    MemberMapboxViewComponent,
+    MapEditorFormComponent,
+  ],
   template: `
     <div class="screen-shell">
       @if (error()) {
@@ -25,15 +35,16 @@ type SpaceConfigPanel = 'select' | 'review';
       }
 
       <section class="step-strip">
-        <button type="button" [class.active]="panel() === 'select'" (click)="panel.set('select')">
+        <button type="button" [class.active]="panel() === 'select'" (click)="showSelect()">
           <span>1</span>
           <strong>Select space</strong>
           <small>Choose the campus, building, and floor that will receive the plan.</small>
         </button>
         <button
           type="button"
-          [disabled]="!selectedFloor()"
-          (click)="openEditor('map')"
+          [class.active]="panel() === 'align'"
+          [disabled]="!selectedFloor() && !creatingFloor()"
+          (click)="panel.set('align')"
         >
           <span>2</span>
           <strong>Upload &amp; align</strong>
@@ -60,34 +71,45 @@ type SpaceConfigPanel = 'select' | 'review';
         </button>
       </section>
 
+      @if (panel() === 'align' && (selectedFloor() || creatingFloor())) {
+        <app-map-editor-form
+          [embedded]="true"
+          [lockFootprint]="true"
+          workflow="map"
+          [mapId]="selectedFloor()?.id ?? null"
+          [buildingId]="creatingFloor() ? (selectedPlace()?.buildingId ?? null) : null"
+          [seedCampusId]="creatingFloor() ? (campus()?.id ?? null) : null"
+          [seedPlaceId]="creatingFloor() ? (selectedPlace()?.id ?? null) : null"
+          (floorSaved)="onFloorSaved($event)"
+        />
+      } @else {
       <section class="map-layout">
-        <section class="map-panel">
-          <svg viewBox="0 0 700 500" role="img" aria-label="Space configuration canvas">
-            <path d="M92 74 H612 V410 H465 V456 H92 Z" class="floor-footprint" />
-            <path d="M118 184 H580 M118 276 H580 M254 102 V388 M416 102 V388" class="floor-lines" />
-            @if (selectedFloor(); as floor) {
-              @if (floor.roomCount > 0) {
-                <rect x="124" y="110" width="120" height="66" class="room ready" />
-                <rect x="263" y="110" width="140" height="66" class="room ready" />
-                <rect x="424" y="110" width="134" height="66" class="room selected" />
-                <rect x="124" y="200" width="160" height="76" class="room ready" />
-                <text x="184" y="149">Room</text>
-                <text x="333" y="149">Room</text>
-                <text x="491" y="149">Selected</text>
-              } @else {
-                <rect x="424" y="292" width="132" height="76" class="room warning" />
-                <text x="490" y="336">No rooms yet</text>
-              }
-            }
-          </svg>
-          <div class="floating-toolbar">
+        <section class="panel canvas">
+          <header class="panel-header">
+            <div>
+              <h3>{{ canvasTitle() }}</h3>
+              <p>{{ canvasSubtitle() }}</p>
+            </div>
             @if (selectedFloor(); as floor) {
               <span class="badge" [class.badge-good]="floor.roomCount > 0" [class.badge-warn]="floor.roomCount === 0">
                 {{ floor.roomCount }} rooms
               </span>
+            } @else if (campus()) {
+              <span class="badge badge-good">{{ buildingPlaces().length }} buildings</span>
             } @else {
-              <span class="badge">Select a floor</span>
+              <span class="badge">{{ campuses().length }} campuses</span>
             }
+          </header>
+          <div class="panel-body">
+            <app-member-mapbox-view
+              [campuses]="campuses()"
+              [selectedCampus]="campus()"
+              [floorMap]="floorMap()"
+              [selectedCampusId]="selectedCampusId()"
+              [selectedPlaceId]="selectedPlaceId()"
+              (campusSelected)="selectCampus($event)"
+              (placeSelected)="selectPlace($event)"
+            />
           </div>
         </section>
 
@@ -146,14 +168,10 @@ type SpaceConfigPanel = 'select' | 'review';
                 }
 
                 <div class="status-row">
-                  @if (selectedPlace(); as place) {
-                    <a
-                      class="primary-action"
-                      [routerLink]="['/admin/buildings', place.buildingId, 'floors', 'new']"
-                      [queryParams]="{ campusId: campus()!.id, placeId: place.id }"
-                    >
+                  @if (selectedPlace()) {
+                    <button class="primary-action" type="button" (click)="startNewFloor()">
                       New floor
-                    </a>
+                    </button>
                   }
                   @if (campus(); as campusValue) {
                     <a class="secondary-action" [routerLink]="['/admin/campuses', campusValue.id]">
@@ -235,6 +253,7 @@ type SpaceConfigPanel = 'select' | 'review';
           }
         </div>
       </section>
+      }
     </div>
   `,
   styles: ``,
@@ -244,6 +263,7 @@ export class SpaceConfigPageComponent {
   private readonly router = inject(Router);
   private readonly campusesService = inject(CampusesService);
   private readonly floorsService = inject(FloorsService);
+  private readonly mapsService = inject(MapsService);
 
   protected readonly campuses = signal<CampusSummaryDto[]>([]);
   protected readonly campus = signal<CampusDto | null>(null);
@@ -251,9 +271,11 @@ export class SpaceConfigPageComponent {
   protected readonly selectedPlaceId = signal<string | null>(null);
   protected readonly floors = signal<FloorMapSummaryDto[]>([]);
   protected readonly selectedFloorId = signal<string | null>(null);
+  protected readonly floorMap = signal<FloorMapDto | null>(null);
   protected readonly loadingFloors = signal(false);
   protected readonly error = signal('');
   protected readonly panel = signal<SpaceConfigPanel>('select');
+  protected readonly creatingFloor = signal(false);
 
   protected readonly buildingPlaces = computed<CampusPlaceDto[]>(() => {
     const campus = this.campus();
@@ -275,11 +297,16 @@ export class SpaceConfigPageComponent {
   }
 
   protected async selectCampus(campusId: string | null): Promise<void> {
+    if (this.selectedCampusId() === campusId && this.campus()) {
+      return;
+    }
     this.selectedCampusId.set(campusId);
     this.campus.set(null);
     this.selectedPlaceId.set(null);
     this.floors.set([]);
     this.selectedFloorId.set(null);
+    this.floorMap.set(null);
+    this.creatingFloor.set(false);
     this.panel.set('select');
 
     if (!campusId) {
@@ -294,9 +321,14 @@ export class SpaceConfigPageComponent {
   }
 
   protected async selectPlace(placeId: string | null): Promise<void> {
+    if (this.selectedPlaceId() === placeId && this.floors().length > 0) {
+      return;
+    }
     this.selectedPlaceId.set(placeId);
     this.floors.set([]);
     this.selectedFloorId.set(null);
+    this.floorMap.set(null);
+    this.creatingFloor.set(false);
     this.panel.set('select');
 
     const place = this.selectedPlace();
@@ -308,7 +340,10 @@ export class SpaceConfigPageComponent {
     try {
       const floors = await this.floorsService.listForBuilding(place.buildingId);
       this.floors.set(floors);
-      this.selectedFloorId.set(floors[0]?.id ?? null);
+      // Reveal the first floor's rooms on the map immediately.
+      if (floors[0]) {
+        this.selectFloor(floors[0].id);
+      }
     } catch (error) {
       this.error.set(this.extractMessage(error));
     } finally {
@@ -317,10 +352,76 @@ export class SpaceConfigPageComponent {
   }
 
   protected selectFloor(floorId: string | null): void {
+    this.creatingFloor.set(false);
     this.selectedFloorId.set(floorId);
     if (!floorId) {
+      this.floorMap.set(null);
       this.panel.set('select');
+      return;
     }
+    void this.loadFloorMap(floorId);
+  }
+
+  protected showSelect(): void {
+    this.creatingFloor.set(false);
+    this.panel.set('select');
+  }
+
+  protected startNewFloor(): void {
+    if (!this.selectedPlace()?.buildingId) {
+      return;
+    }
+    this.selectedFloorId.set(null);
+    this.floorMap.set(null);
+    this.creatingFloor.set(true);
+    this.panel.set('align');
+  }
+
+  protected async onFloorSaved(map: FloorMapDto): Promise<void> {
+    const place = this.selectedPlace();
+    if (place?.buildingId) {
+      try {
+        this.floors.set(await this.floorsService.listForBuilding(place.buildingId));
+      } catch (error) {
+        this.error.set(this.extractMessage(error));
+      }
+    }
+    // Keep the embedded editor mounted: select the saved floor before leaving create mode.
+    this.selectedFloorId.set(map.id);
+    this.floorMap.set(map);
+    this.creatingFloor.set(false);
+  }
+
+  private async loadFloorMap(floorId: string): Promise<void> {
+    this.floorMap.set(null);
+    try {
+      this.floorMap.set(await this.mapsService.get(floorId));
+    } catch (error) {
+      this.error.set(this.extractMessage(error));
+    }
+  }
+
+  protected canvasTitle(): string {
+    const floor = this.selectedFloor();
+    const place = this.selectedPlace();
+    const campus = this.campus();
+    if (place && floor) {
+      return `${place.name} · ${floor.floorLabel}`;
+    }
+    if (campus) {
+      return campus.name;
+    }
+    return 'Organization map';
+  }
+
+  protected canvasSubtitle(): string {
+    if (this.selectedFloor()) {
+      return 'Rooms defined on the selected floor. Use the pipeline steps to edit them.';
+    }
+    if (this.campus()) {
+      return 'Click a building to load its floors and rooms.';
+    }
+    return 'Click a campus to load its spaces.';
   }
 
   protected openEditor(workflow: 'map' | 'rooms'): void {

@@ -21,15 +21,17 @@ import {
   type BackgroundImageEditDraft,
   type CanvasMode,
   type EditorRectangle,
+  DEFAULT_IMAGE_OPACITY,
+  clampBackgroundScale,
   clampCropRect,
   createDefaultCropRect,
   createMinimumCropSize,
   getBackgroundImageRect,
-  quarterTurnsToDegrees,
 } from '../core/background-image-editor';
 
 type RoomInteractionMode = 'drag' | 'resize';
 type CropHandle = 'nw' | 'ne' | 'se' | 'sw';
+type Corner = 'nw' | 'ne' | 'se' | 'sw';
 
 interface RoomInteractionState {
   kind: 'room';
@@ -40,12 +42,34 @@ interface RoomInteractionState {
   initial: EditorRoomModel;
 }
 
-interface BackgroundPanInteractionState {
-  kind: 'background-pan';
+interface ImageMoveInteractionState {
+  kind: 'image-move';
   startX: number;
   startY: number;
   initialOffsetX: number;
   initialOffsetY: number;
+}
+
+interface ImageScaleInteractionState {
+  kind: 'image-scale';
+  startX: number;
+  startY: number;
+  cx: number;
+  cy: number;
+  initialScale: number;
+  initialDist: number;
+}
+
+interface ImageRotateInteractionState {
+  kind: 'image-rotate';
+  startX: number;
+  startY: number;
+  cx: number;
+  cy: number;
+  /** Pointer angle (radians) at drag start. */
+  startAngle: number;
+  /** Image rotation (degrees) at drag start. */
+  initialRotation: number;
 }
 
 interface CropMoveInteractionState {
@@ -65,7 +89,9 @@ interface CropResizeInteractionState {
 
 type InteractionState =
   | RoomInteractionState
-  | BackgroundPanInteractionState
+  | ImageMoveInteractionState
+  | ImageScaleInteractionState
+  | ImageRotateInteractionState
   | CropMoveInteractionState
   | CropResizeInteractionState;
 
@@ -83,7 +109,21 @@ type InteractionState =
         </defs>
 
         @if (backgroundUrl()) {
-          @if (canvasMode() === 'crop') {
+          @if (canvasMode() === 'image') {
+            <!-- Free-transform alignment: the whole image is shown semi-transparent
+                 over the footprint so it can be dragged, scaled, and rotated. -->
+            <image
+              class="alignment-image"
+              [attr.href]="backgroundUrl()!"
+              [attr.x]="backgroundImageRect().x"
+              [attr.y]="backgroundImageRect().y"
+              [attr.width]="backgroundImageRect().width"
+              [attr.height]="backgroundImageRect().height"
+              [attr.opacity]="imageOpacity()"
+              preserveAspectRatio="none"
+              [attr.transform]="backgroundRotationTransform()"
+            />
+          } @else if (canvasMode() === 'crop') {
             <g [attr.clip-path]="'url(#' + backgroundClipPathId + ')'">
               <image
                 [attr.href]="backgroundUrl()!"
@@ -119,18 +159,42 @@ type InteractionState =
           }
         }
 
-        @if (backgroundUrl() && canvasMode() === 'image') {
-          <rect
-            class="image-pan-layer"
-            [attr.x]="bounds().minX"
-            [attr.y]="bounds().minY"
-            [attr.width]="bounds().width"
-            [attr.height]="bounds().height"
-            (pointerdown)="startBackgroundPan($event)"
-          />
-        }
-
         <polygon class="footprint" [attr.points]="footprintPoints()" />
+
+        @if (backgroundUrl() && canvasMode() === 'image') {
+          <g class="image-transform">
+            <polygon
+              class="image-box"
+              [attr.points]="imageBoxPoints()"
+              (pointerdown)="startImageMove($event)"
+            />
+            <line
+              class="image-rotate-stem"
+              [attr.x1]="rotateStemStart().x"
+              [attr.y1]="rotateStemStart().y"
+              [attr.x2]="rotateHandle().x"
+              [attr.y2]="rotateHandle().y"
+            />
+            <circle
+              class="image-rotate-handle"
+              [attr.cx]="rotateHandle().x"
+              [attr.cy]="rotateHandle().y"
+              [attr.r]="rotateHandleRadius()"
+              (pointerdown)="startImageRotate($event)"
+            >
+              <title>Drag to rotate</title>
+            </circle>
+            @for (corner of imageCorners(); track corner.key) {
+              <circle
+                class="image-resize-handle"
+                [attr.cx]="corner.x"
+                [attr.cy]="corner.y"
+                [attr.r]="handleRadius()"
+                (pointerdown)="startImageScale($event)"
+              />
+            }
+          </g>
+        }
 
         @for (room of rooms(); track room.id) {
           <g>
@@ -268,9 +332,40 @@ type InteractionState =
       vector-effect: non-scaling-stroke;
     }
 
-    .image-pan-layer {
+    .alignment-image {
+      pointer-events: none;
+    }
+
+    .image-box {
       fill: transparent;
+      stroke: var(--blue, #2563eb);
+      stroke-width: 2;
+      stroke-dasharray: 6 4;
+      cursor: move;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .image-rotate-stem {
+      stroke: var(--blue, #2563eb);
+      stroke-width: 2;
+      vector-effect: non-scaling-stroke;
+      pointer-events: none;
+    }
+
+    .image-rotate-handle {
+      fill: var(--blue, #2563eb);
+      stroke: white;
+      stroke-width: 2;
       cursor: grab;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .image-resize-handle {
+      fill: white;
+      stroke: var(--blue, #2563eb);
+      stroke-width: 2;
+      cursor: nwse-resize;
+      vector-effect: non-scaling-stroke;
     }
 
     .room-shape {
@@ -444,7 +539,17 @@ export class MapEditorCanvasComponent {
     const rectangle = this.backgroundImageRect();
     const centerX = rectangle.x + rectangle.width / 2;
     const centerY = rectangle.y + rectangle.height / 2;
-    return `rotate(${quarterTurnsToDegrees(draft.rotationQuarterTurns)} ${centerX} ${centerY})`;
+    let transform = `rotate(${draft.rotationDegrees} ${centerX} ${centerY})`;
+
+    // Mirror about the image centre. Applied before the rotation (rightmost in the
+    // SVG transform list) to match the backend pipeline (flip → rotate).
+    if (draft.flipHorizontal || draft.flipVertical) {
+      const scaleX = draft.flipHorizontal ? -1 : 1;
+      const scaleY = draft.flipVertical ? -1 : 1;
+      transform += ` translate(${centerX} ${centerY}) scale(${scaleX} ${scaleY}) translate(${-centerX} ${-centerY})`;
+    }
+
+    return transform;
   }
 
   protected displayedCropRect(): EditorRectangle {
@@ -514,12 +619,85 @@ export class MapEditorCanvasComponent {
     };
   }
 
-  protected startBackgroundPan(event: PointerEvent): void {
+  protected imageOpacity(): number {
+    return this.backgroundDraft().opacity ?? DEFAULT_IMAGE_OPACITY;
+  }
+
+  protected rotateHandleRadius(): number {
+    return this.handleRadius() * 1.25;
+  }
+
+  private imageCenter(): { cx: number; cy: number } {
+    const box = this.bounds();
+    const draft = this.backgroundDraft();
+    return {
+      cx: box.minX + box.width / 2 + draft.offsetX,
+      cy: box.minY + box.height / 2 + draft.offsetY,
+    };
+  }
+
+  private rotateAround(
+    x: number,
+    y: number,
+    cx: number,
+    cy: number,
+    degrees: number,
+  ): { x: number; y: number } {
+    if (degrees === 0) {
+      return { x, y };
+    }
+    const radians = (degrees * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const dx = x - cx;
+    const dy = y - cy;
+    return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+  }
+
+  protected imageCorners(): Array<{ key: Corner; x: number; y: number }> {
+    const rect = this.backgroundImageRect();
+    const { cx, cy } = this.imageCenter();
+    const degrees = this.backgroundDraft().rotationDegrees;
+    const corners: Array<{ key: Corner; x: number; y: number }> = [
+      { key: 'nw', x: rect.x, y: rect.y },
+      { key: 'ne', x: rect.x + rect.width, y: rect.y },
+      { key: 'se', x: rect.x + rect.width, y: rect.y + rect.height },
+      { key: 'sw', x: rect.x, y: rect.y + rect.height },
+    ];
+    return corners.map((corner) => {
+      const rotated = this.rotateAround(corner.x, corner.y, cx, cy, degrees);
+      return { key: corner.key, x: rotated.x, y: rotated.y };
+    });
+  }
+
+  protected imageBoxPoints(): string {
+    return this.imageCorners()
+      .map((corner) => `${corner.x},${corner.y}`)
+      .join(' ');
+  }
+
+  protected rotateStemStart(): { x: number; y: number } {
+    const rect = this.backgroundImageRect();
+    const { cx, cy } = this.imageCenter();
+    const degrees = this.backgroundDraft().rotationDegrees;
+    return this.rotateAround(rect.x + rect.width / 2, rect.y, cx, cy, degrees);
+  }
+
+  protected rotateHandle(): { x: number; y: number } {
+    const rect = this.backgroundImageRect();
+    const { cx, cy } = this.imageCenter();
+    const degrees = this.backgroundDraft().rotationDegrees;
+    const stem = Math.max(this.bounds().height * 0.07, this.handleRadius() * 4);
+    return this.rotateAround(rect.x + rect.width / 2, rect.y - stem, cx, cy, degrees);
+  }
+
+  protected startImageMove(event: PointerEvent): void {
     if (this.canvasMode() !== 'image' || !this.backgroundUrl()) {
       return;
     }
 
     event.preventDefault();
+    event.stopPropagation();
     const point = this.toSvgPoint(event);
     if (!point) {
       return;
@@ -527,11 +705,60 @@ export class MapEditorCanvasComponent {
 
     const draft = this.backgroundDraft();
     this.interaction = {
-      kind: 'background-pan',
+      kind: 'image-move',
       startX: point.x,
       startY: point.y,
       initialOffsetX: draft.offsetX,
       initialOffsetY: draft.offsetY,
+    };
+  }
+
+  protected startImageScale(event: PointerEvent): void {
+    if (this.canvasMode() !== 'image' || !this.backgroundUrl()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const point = this.toSvgPoint(event);
+    if (!point) {
+      return;
+    }
+
+    const { cx, cy } = this.imageCenter();
+    const initialDist = Math.hypot(point.x - cx, point.y - cy) || 1;
+    this.interaction = {
+      kind: 'image-scale',
+      startX: point.x,
+      startY: point.y,
+      cx,
+      cy,
+      initialScale: this.backgroundDraft().scale,
+      initialDist,
+    };
+  }
+
+  protected startImageRotate(event: PointerEvent): void {
+    if (this.canvasMode() !== 'image' || !this.backgroundUrl()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const point = this.toSvgPoint(event);
+    if (!point) {
+      return;
+    }
+
+    const { cx, cy } = this.imageCenter();
+    this.interaction = {
+      kind: 'image-rotate',
+      startX: point.x,
+      startY: point.y,
+      cx,
+      cy,
+      startAngle: Math.atan2(point.y - cy, point.x - cx),
+      initialRotation: this.backgroundDraft().rotationDegrees,
     };
   }
 
@@ -667,10 +894,28 @@ export class MapEditorCanvasComponent {
       return;
     }
 
-    if (this.interaction.kind === 'background-pan') {
+    if (this.interaction.kind === 'image-move') {
       this.updateBackgroundDraft({
         offsetX: this.interaction.initialOffsetX + deltaX,
         offsetY: this.interaction.initialOffsetY + deltaY,
+      });
+      return;
+    }
+
+    if (this.interaction.kind === 'image-scale') {
+      const dist = Math.hypot(point.x - this.interaction.cx, point.y - this.interaction.cy);
+      const scale = clampBackgroundScale(
+        this.interaction.initialScale * (dist / this.interaction.initialDist),
+      );
+      this.updateBackgroundDraft({ scale });
+      return;
+    }
+
+    if (this.interaction.kind === 'image-rotate') {
+      const angle = Math.atan2(point.y - this.interaction.cy, point.x - this.interaction.cx);
+      const deltaDegrees = ((angle - this.interaction.startAngle) * 180) / Math.PI;
+      this.updateBackgroundDraft({
+        rotationDegrees: this.interaction.initialRotation + deltaDegrees,
       });
       return;
     }

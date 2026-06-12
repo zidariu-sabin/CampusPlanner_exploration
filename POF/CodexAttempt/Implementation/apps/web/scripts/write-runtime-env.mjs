@@ -10,7 +10,7 @@ const outputPath = resolve(appRoot, 'public', 'env.js');
 const defaults = {
   CAMPUS_API_BASE_URL: 'http://localhost:3000',
   MAPBOX_ACCESS_TOKEN: '',
-  MAPBOX_STYLE_URL: 'mapbox://styles/mapbox/standard-satellite',
+  MAPBOX_STYLE_URL: 'mapbox://styles/mapbox/streets-v12',
 };
 
 const parseDotEnv = (source) => {

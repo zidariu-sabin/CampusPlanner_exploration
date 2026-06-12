@@ -32,16 +32,16 @@ const DEFAULT_ZOOM = 18;
 type MapStyleKey = 'standard-satellite' | 'streets';
 
 const MAP_STYLES: Array<{ key: MapStyleKey; label: string; url: string }> = [
+  { key: 'streets', label: 'Streets', url: 'mapbox://styles/mapbox/streets-v12' },
   {
     key: 'standard-satellite',
     label: 'Satellite',
-    url: 'mapbox://styles/mapbox/standard-satellite',
+    url: 'mapbox://styles/mapbox/satellite-streets-v12',
   },
-  { key: 'streets', label: 'Streets', url: 'mapbox://styles/mapbox/streets-v12' },
 ];
 
 const DEFAULT_STYLE_KEY =
-  MAP_STYLES.find((style) => style.url === environment.mapboxStyleUrl)?.key ?? 'standard-satellite';
+  MAP_STYLES.find((style) => style.url === environment.mapboxStyleUrl)?.key ?? 'streets';
 
 @Component({
   selector: 'app-mapbox-map-view',
@@ -307,14 +307,15 @@ export class MapboxMapViewComponent implements AfterViewInit, OnChanges, OnDestr
     if (source) {
       source.setData(data);
     } else {
+      const sat = this.selectedStyle() === 'standard-satellite';
       map.addSource(this.footprintSourceId, { type: 'geojson', data });
       map.addLayer({
         id: this.footprintLayerId,
         type: 'line',
         source: this.footprintSourceId,
         paint: {
-          'line-color': '#115e59',
-          'line-width': 3,
+          'line-color': sat ? '#ffffff' : '#115e59',
+          'line-width': sat ? 4.5 : 3,
         },
       });
     }
@@ -332,6 +333,7 @@ export class MapboxMapViewComponent implements AfterViewInit, OnChanges, OnDestr
     if (source) {
       source.setData(data);
     } else {
+      const sat = this.selectedStyle() === 'standard-satellite';
       map.addSource(this.roomsSourceId, { type: 'geojson', data });
       map.addLayer({
         id: this.roomsFillLayerId,
@@ -339,7 +341,7 @@ export class MapboxMapViewComponent implements AfterViewInit, OnChanges, OnDestr
         source: this.roomsSourceId,
         paint: {
           'fill-color': ['get', 'color'],
-          'fill-opacity': ['case', ['get', 'selected'], 0.56, 0.35],
+          'fill-opacity': ['case', ['get', 'selected'], sat ? 0.74 : 0.56, sat ? 0.52 : 0.35],
         },
       });
       map.addLayer({
@@ -347,8 +349,8 @@ export class MapboxMapViewComponent implements AfterViewInit, OnChanges, OnDestr
         type: 'line',
         source: this.roomsSourceId,
         paint: {
-          'line-color': ['case', ['get', 'selected'], '#111827', 'rgba(31,42,51,0.72)'],
-          'line-width': ['case', ['get', 'selected'], 4, 2],
+          'line-color': ['case', ['get', 'selected'], '#111827', sat ? '#ffffff' : 'rgba(31,42,51,0.72)'],
+          'line-width': ['case', ['get', 'selected'], sat ? 5 : 4, sat ? 3 : 2],
         },
       });
       map.on('click', this.roomsFillLayerId, this.onRoomClick);

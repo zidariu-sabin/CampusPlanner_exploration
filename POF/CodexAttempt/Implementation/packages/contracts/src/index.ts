@@ -199,11 +199,13 @@ export interface NormalizedRectangle {
 }
 
 export interface ProcessBackgroundImageRequest {
-  rotationQuarterTurns: number;
+  rotationDegrees: number;
   scale: number;
   offsetX: number;
   offsetY: number;
   cropRect: NormalizedRectangle;
+  flipHorizontal?: boolean;
+  flipVertical?: boolean;
 }
 
 export interface EditableRoomInput {

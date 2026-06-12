@@ -195,7 +195,10 @@ const PLACE_TYPE_OPTIONS: Array<{ value: CampusPlaceType; label: string }> = [
               <div class="panel-body">
                 <app-mapbox-footprint-picker
                   [footprint]="placeFootprint()"
+                  [referenceFootprint]="campusBoundary()"
+                  [selectableFootprints]="otherSpaces()"
                   (footprintChange)="placeFootprint.set($event)"
+                  (footprintSelected)="onMapSpaceSelected($event)"
                 />
               </div>
             </section>
@@ -254,8 +257,32 @@ export class CampusConfigPageComponent {
 
   private readonly campusId = computed(() => this.route.snapshot.paramMap.get('campusId'));
 
+  /** All campus spaces except the one currently being edited, shown as non-editable outlines. */
+  protected readonly otherSpaces = computed(() => {
+    const campus = this.campus();
+    const editingId = this.editingPlaceId();
+    if (!campus) {
+      return [];
+    }
+    return campus.places
+      .filter((place) => place.id !== editingId)
+      .map((place) => ({
+        id: place.id,
+        footprint: place.footprintGeoJson,
+        name: place.name,
+        building: !!place.buildingId,
+      }));
+  });
+
   constructor() {
     void this.load();
+  }
+
+  protected onMapSpaceSelected(placeId: string): void {
+    const place = this.campus()?.places.find((item) => item.id === placeId);
+    if (place) {
+      this.startEditPlace(place);
+    }
   }
 
   protected placeTypeLabel(type: CampusPlaceType): string {
@@ -274,7 +301,9 @@ export class CampusConfigPageComponent {
     this.placeName = '';
     this.placeType.set('building');
     this.placeBookable = false;
-    this.placeFootprint.set(this.campusBoundary());
+    // Start empty so the user draws the space inside the campus boundary, which
+    // is shown as a non-editable reference outline on the picker.
+    this.placeFootprint.set(null);
   }
 
   protected startEditPlace(place: CampusPlaceDto): void {
@@ -392,7 +421,7 @@ export class CampusConfigPageComponent {
       const campus = await this.campusesService.get(campusId);
       this.campus.set(campus);
       this.applyCampus(campus);
-      this.placeFootprint.set(campus.boundaryGeoJson);
+      this.placeFootprint.set(null);
     } catch (error) {
       this.error.set(this.extractMessage(error));
     } finally {

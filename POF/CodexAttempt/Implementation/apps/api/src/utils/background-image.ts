@@ -15,13 +15,19 @@ export async function processMapBackgroundImage(
   const canvasSize = getCanvasSize(metadata.width ?? 1600, metadata.height ?? 900, footprintGeoJson);
   const scaledWidth = Math.max(Math.round(canvasSize.width * edits.scale), 1);
   const scaledHeight = Math.max(Math.round(canvasSize.height * edits.scale), 1);
-  const transformedImage = await sharp(sourcePath)
-    .resize({
-      width: scaledWidth,
-      height: scaledHeight,
-      fit: 'fill',
-    })
-    .rotate(edits.rotationQuarterTurns * 90, {
+  let pipeline = sharp(sourcePath).resize({
+    width: scaledWidth,
+    height: scaledHeight,
+    fit: 'fill',
+  });
+  if (edits.flipHorizontal) {
+    pipeline = pipeline.flop();
+  }
+  if (edits.flipVertical) {
+    pipeline = pipeline.flip();
+  }
+  const transformedImage = await pipeline
+    .rotate(edits.rotationDegrees, {
       background: { r: 0, g: 0, b: 0, alpha: 0 },
     })
     .png()

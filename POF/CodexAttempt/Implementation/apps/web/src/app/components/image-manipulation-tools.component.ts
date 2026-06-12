@@ -6,6 +6,7 @@ import {
   type BackgroundImageEditDraft,
   type CanvasMode,
   clampBackgroundScale,
+  clampOpacity,
 } from '../core/background-image-editor';
 
 @Component({
@@ -99,6 +100,18 @@ import {
             [disabled]="!canUseImageTools()"
           />
         </label>
+        <label>
+          Image opacity
+          <input
+            type="range"
+            min="0.1"
+            max="1"
+            step="0.05"
+            [ngModel]="draft().opacity"
+            (ngModelChange)="setOpacity($event)"
+            [disabled]="!canUseImageTools()"
+          />
+        </label>
       </div>
 
       <div class="actions">
@@ -117,6 +130,24 @@ import {
           [disabled]="!canUseImageTools()"
         >
           Rotate right
+        </button>
+        <button
+          type="button"
+          class="ghost"
+          [class.active]="draft().flipHorizontal"
+          (click)="toggleFlip('horizontal')"
+          [disabled]="!canUseImageTools()"
+        >
+          Flip horizontal
+        </button>
+        <button
+          type="button"
+          class="ghost"
+          [class.active]="draft().flipVertical"
+          (click)="toggleFlip('vertical')"
+          [disabled]="!canUseImageTools()"
+        >
+          Flip vertical
         </button>
         <button type="button" class="ghost" (click)="reset.emit()" [disabled]="!canUseImageTools()">
           Reset edits
@@ -184,6 +215,18 @@ export class ImageManipulationToolsComponent {
 
   protected setScale(value: number | string | null): void {
     this.updateDraft({ scale: clampBackgroundScale(Number(value)) });
+  }
+
+  protected setOpacity(value: number | string | null): void {
+    this.updateDraft({ opacity: clampOpacity(Number(value)) });
+  }
+
+  protected toggleFlip(axis: 'horizontal' | 'vertical'): void {
+    if (axis === 'horizontal') {
+      this.updateDraft({ flipHorizontal: !this.draft().flipHorizontal });
+    } else {
+      this.updateDraft({ flipVertical: !this.draft().flipVertical });
+    }
   }
 
   protected numberValue(value: number | string | null): number {

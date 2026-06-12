@@ -13,5 +13,5 @@ const runtimeEnvironment = globalThis.__CAMPUS_PLANNER_ENV__ ?? {};
 export const environment = {
   apiBaseUrl: runtimeEnvironment.apiBaseUrl ?? 'http://localhost:3000',
   mapboxAccessToken: runtimeEnvironment.mapboxAccessToken ?? '',
-  mapboxStyleUrl: runtimeEnvironment.mapboxStyleUrl ?? 'mapbox://styles/mapbox/standard-satellite',
+  mapboxStyleUrl: runtimeEnvironment.mapboxStyleUrl ?? 'mapbox://styles/mapbox/streets-v12',
 };
