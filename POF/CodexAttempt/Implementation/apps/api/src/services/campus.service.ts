@@ -5,6 +5,8 @@ import { BookableResourceEntity } from '../entities/bookable-resource.entity.js'
 import { BuildingEntity } from '../entities/building.entity.js';
 import { CampusEntity } from '../entities/campus.entity.js';
 import { CampusPlaceEntity } from '../entities/campus-place.entity.js';
+import { FloorMapEntity } from '../entities/floor-map.entity.js';
+import { RoomEntity } from '../entities/room.entity.js';
 import { HttpError } from '../utils/http-error.js';
 import { ensurePolygon } from '../utils/validation.js';
 
@@ -16,7 +18,9 @@ const campusRelations = {
   places: {
     building: {
       floorMaps: {
-        rooms: true,
+        rooms: {
+          bookableResource: true,
+        },
       },
     },
     bookableResource: true,
@@ -29,6 +33,63 @@ export async function listCampuses(organizationId: string): Promise<CampusEntity
     relations: campusRelations,
     order: { name: 'ASC' },
   });
+}
+
+export interface RoomSearchMatch {
+  room: RoomEntity;
+  floorMap: FloorMapEntity;
+  building: BuildingEntity;
+  place: CampusPlaceEntity;
+  campus: CampusEntity;
+}
+
+/**
+ * Org-wide room search by name. Reuses the deep campus relations, filters rooms
+ * whose name contains the query (case-insensitive), and returns each match with
+ * its full campus → space → floor context so the caller can build a redirect.
+ */
+export async function searchRooms(
+  organizationId: string,
+  query: string,
+  limit = 20,
+): Promise<RoomSearchMatch[]> {
+  const needle = query.trim().toLowerCase();
+  if (needle.length === 0) {
+    return [];
+  }
+
+  const campuses = await listCampuses(organizationId);
+  const matches: RoomSearchMatch[] = [];
+
+  for (const campus of campuses) {
+    for (const place of campus.places ?? []) {
+      const building = place.building;
+      if (!building) {
+        continue;
+      }
+      for (const floorMap of building.floorMaps ?? []) {
+        for (const room of floorMap.rooms ?? []) {
+          if (room.name.toLowerCase().includes(needle)) {
+            matches.push({ room, floorMap, building, place, campus });
+          }
+        }
+      }
+    }
+  }
+
+  // Surface exact/prefix matches first, then alphabetical, then cap.
+  matches.sort((left, right) => {
+    const leftName = left.room.name.toLowerCase();
+    const rightName = right.room.name.toLowerCase();
+    const leftRank = leftName === needle ? 0 : leftName.startsWith(needle) ? 1 : 2;
+    const rightRank = rightName === needle ? 0 : rightName.startsWith(needle) ? 1 : 2;
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank;
+    }
+    return leftName.localeCompare(rightName);
+  });
+
+  return matches.slice(0, limit);
 }
 
 export async function getCampusOrFail(organizationId: string, campusId: string): Promise<CampusEntity> {

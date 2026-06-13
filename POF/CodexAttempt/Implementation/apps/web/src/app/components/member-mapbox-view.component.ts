@@ -33,8 +33,9 @@ import type { FeatureCollection, Polygon } from 'geojson';
 
 import { environment } from '../../environments/environment';
 import { assetUrl } from '../core/api';
+import { FALLBACK_CENTER, getUserLocation } from '../core/geolocation';
 
-const DEFAULT_CENTER: [number, number] = [23.830052, 44.297575];
+const DEFAULT_CENTER: [number, number] = FALLBACK_CENTER;
 const DEFAULT_ZOOM = 15;
 
 type MapStyleKey = 'standard-satellite' | 'streets';
@@ -163,6 +164,7 @@ export class MemberMapboxViewComponent implements AfterViewInit, OnChanges, OnDe
   private popup: Popup | null = null;
   private mapLoaded = false;
   private destroyed = false;
+  private triedGeolocation = false;
   /** Tracks which focus level the camera last fitted so we only re-fit on real changes. */
   private lastFitKey = '';
 
@@ -270,7 +272,7 @@ export class MemberMapboxViewComponent implements AfterViewInit, OnChanges, OnDe
     const data: FeatureCollection<Polygon> = {
       type: 'FeatureCollection',
       features: this.campuses
-        .filter((campus) => !!campus.boundaryGeoJson)
+        .filter((campus) => !!(campus.extentGeoJson ?? campus.boundaryGeoJson))
         .map((campus) => ({
           type: 'Feature',
           properties: {
@@ -278,7 +280,7 @@ export class MemberMapboxViewComponent implements AfterViewInit, OnChanges, OnDe
             name: campus.name,
             selected: campus.id === this.selectedCampusId,
           },
-          geometry: campus.boundaryGeoJson as Polygon,
+          geometry: (campus.extentGeoJson ?? campus.boundaryGeoJson) as Polygon,
         })),
     };
 
@@ -597,7 +599,15 @@ export class MemberMapboxViewComponent implements AfterViewInit, OnChanges, OnDe
     let key = '';
     let rings: number[][][] = [];
 
-    if (this.floorMap) {
+    const selectedRoom = this.selectedRoomId
+      ? this.floorMap?.rooms.find((room) => room.id === this.selectedRoomId)
+      : null;
+
+    if (selectedRoom) {
+      // A specific room is targeted (search redirect or click): centre on it.
+      key = `room:${selectedRoom.id}`;
+      rings = [selectedRoom.geometryGeoJson.coordinates[0] ?? []];
+    } else if (this.floorMap) {
       key = `floor:${this.floorMap.id}`;
       rings = [this.floorMap.footprintGeoJson.coordinates[0] ?? []];
     } else if (this.selectedCampus?.boundaryGeoJson) {
@@ -609,8 +619,8 @@ export class MemberMapboxViewComponent implements AfterViewInit, OnChanges, OnDe
     } else {
       key = `all:${this.campuses.map((campus) => campus.id).join(',')}`;
       rings = this.campuses
-        .filter((campus) => !!campus.boundaryGeoJson)
-        .map((campus) => (campus.boundaryGeoJson as Polygon).coordinates[0] ?? []);
+        .filter((campus) => !!(campus.extentGeoJson ?? campus.boundaryGeoJson))
+        .map((campus) => ((campus.extentGeoJson ?? campus.boundaryGeoJson) as Polygon).coordinates[0] ?? []);
     }
 
     if (!force && key === this.lastFitKey) {
@@ -629,6 +639,39 @@ export class MemberMapboxViewComponent implements AfterViewInit, OnChanges, OnDe
 
     if (!bounds.isEmpty()) {
       map.fitBounds(bounds, { padding: 56, maxZoom: 20, duration: 400 });
+      return;
     }
+
+    // Nothing configured yet: centre on the user's actual location instead of the
+    // hard-coded fallback coordinates.
+    this.centerOnUserOnce();
+  }
+
+  private hasFittableGeometry(): boolean {
+    if (this.floorMap || this.selectedCampus) {
+      return true;
+    }
+    return this.campuses.some((campus) => !!(campus.extentGeoJson ?? campus.boundaryGeoJson));
+  }
+
+  private centerOnUserOnce(): void {
+    if (this.triedGeolocation) {
+      return;
+    }
+    this.triedGeolocation = true;
+
+    // Wait briefly so campuses loading asynchronously can win before we prompt
+    // for geolocation (avoids a spurious permission prompt when data is incoming).
+    setTimeout(() => {
+      if (this.destroyed || this.hasFittableGeometry()) {
+        return;
+      }
+      void getUserLocation().then((location) => {
+        if (!location || !this.mapInstance || this.destroyed || this.hasFittableGeometry()) {
+          return;
+        }
+        this.mapInstance.jumpTo({ center: location, zoom: 16 });
+      });
+    }, 800);
   }
 }

@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
   CampusDto,
@@ -6,6 +6,7 @@ import {
   CampusSummaryDto,
   CreateCampusPlaceRequest,
   CreateCampusRequest,
+  RoomSearchResultDto,
   UpdateCampusPlaceRequest,
   UpdateCampusRequest,
 } from '@campus/contracts';
@@ -23,6 +24,13 @@ export class CampusesService {
 
   get(campusId: string): Promise<CampusDto> {
     return firstValueFrom(this.http.get<CampusDto>(apiUrl(`/campuses/${campusId}`)));
+  }
+
+  searchRooms(query: string): Promise<RoomSearchResultDto[]> {
+    const params = new HttpParams().set('q', query);
+    return firstValueFrom(
+      this.http.get<RoomSearchResultDto[]>(apiUrl('/campuses/rooms/search'), { params }),
+    );
   }
 
   create(payload: CreateCampusRequest): Promise<CampusDto> {

@@ -31,8 +31,9 @@ import {
   type BackgroundImageEditDraft,
 } from '../core/background-image-editor';
 import { environment } from '../../environments/environment';
+import { FALLBACK_CENTER, getUserLocation } from '../core/geolocation';
 
-const SAMPLE_CENTER: [number, number] = [23.830052, 44.297575];
+const SAMPLE_CENTER: [number, number] = FALLBACK_CENTER;
 const DEFAULT_ZOOM = 18;
 const PLAN_IMAGE_SOURCE_ID = 'campus-plan-image';
 const PLAN_IMAGE_LAYER_ID = 'campus-plan-image-layer';
@@ -244,6 +245,7 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
   private draw: MapboxDraw | null = null;
   private mapLoaded = false;
   private destroyed = false;
+  private triedGeolocation = false;
   private featureId: string | null = null;
   private lastSyncedFootprint = '';
   private syncingFromInput = false;
@@ -256,6 +258,11 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
     this.syncDrawFromInput(true, true);
     if (!this.footprint && this.referenceFootprint) {
       this.fitToFootprint(this.referenceFootprint);
+    } else if (!this.footprint && this.fitToSpaces()) {
+      // Campus without a drawn boundary but with defined spaces: fit to them.
+    } else if (!this.footprint && !this.referenceFootprint) {
+      // Brand-new campus with nothing to fit: centre on the user's location.
+      this.centerOnUserOnce();
     }
     this.map?.resize();
   };
@@ -306,6 +313,9 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
 
     if ('selectableFootprints' in changes) {
       this.syncSpacesLayer();
+      if (!this.footprint && !this.referenceFootprint) {
+        this.fitToSpaces();
+      }
     }
   }
 
@@ -725,6 +735,59 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
     this.mode.set('idle');
     this.status.set('Footprint updated from Mapbox.');
     this.footprintChange.emit(polygon);
+  }
+
+  private centerOnUserOnce(): void {
+    if (this.triedGeolocation) {
+      return;
+    }
+    this.triedGeolocation = true;
+
+    // Wait briefly so a footprint/reference loading asynchronously can win before
+    // we prompt for geolocation.
+    setTimeout(() => {
+      if (this.destroyed || this.footprint || this.referenceFootprint || this.selectableFootprints.length) {
+        return;
+      }
+      void getUserLocation().then((location) => {
+        if (
+          !location ||
+          !this.map ||
+          this.destroyed ||
+          this.footprint ||
+          this.referenceFootprint ||
+          this.selectableFootprints.length
+        ) {
+          return;
+        }
+        this.map.jumpTo({ center: location, zoom: 17 });
+      });
+    }, 800);
+  }
+
+  /** Fits the camera to all selectable spaces. Returns false if there are none. */
+  private fitToSpaces(): boolean {
+    const map = this.map;
+    const mapboxgl = this.mapboxgl;
+    if (!map || !mapboxgl || this.selectableFootprints.length === 0) {
+      return false;
+    }
+
+    const bounds = new mapboxgl.LngLatBounds();
+    for (const space of this.selectableFootprints) {
+      for (const position of space.footprint.coordinates[0] ?? []) {
+        if (Number.isFinite(position[0]) && Number.isFinite(position[1])) {
+          bounds.extend(position);
+        }
+      }
+    }
+
+    if (bounds.isEmpty()) {
+      return false;
+    }
+
+    map.fitBounds(bounds, { padding: 48, maxZoom: 20, duration: 350 });
+    return true;
   }
 
   private fitToFootprint(polygon: GeoJsonPolygon): void {

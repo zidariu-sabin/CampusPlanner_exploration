@@ -5,12 +5,16 @@ import {
   CampusSummaryDto,
   FloorMapDto,
   FloorMapSummaryDto,
+  GeoJsonPolygon,
   MeetingDto,
   OrganizationDto,
   OrganizationInviteDto,
   RoomDto,
+  RoomSearchResultDto,
   UserSummaryDto,
 } from '@campus/contracts';
+
+import type { RoomSearchMatch } from '../services/campus.service.js';
 
 import { BookableResourceEntity } from '../entities/bookable-resource.entity.js';
 import { CampusEntity } from '../entities/campus.entity.js';
@@ -67,6 +71,49 @@ export function toCampusPlaceDto(place: CampusPlaceEntity): CampusPlaceDto {
   };
 }
 
+/**
+ * Camera-fit extent for overviews: the campus boundary if set, otherwise the
+ * bounding rectangle of the campus's place footprints, or null if empty. Lets
+ * the map fit to a campus that has buildings drawn but no boundary polygon.
+ */
+function campusExtent(campus: CampusEntity): GeoJsonPolygon | null {
+  if (campus.boundaryGeoJson) {
+    return campus.boundaryGeoJson;
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const place of campus.places ?? []) {
+    const ring = place.footprintGeoJson?.coordinates?.[0] ?? [];
+    for (const [x, y] of ring) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+    return null;
+  }
+
+  return {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [minX, minY],
+        [maxX, minY],
+        [maxX, maxY],
+        [minX, maxY],
+        [minX, minY],
+      ],
+    ],
+  };
+}
+
 export function toCampusSummaryDto(campus: CampusEntity): CampusSummaryDto {
   const places = campus.places ?? [];
   const buildings = places.filter((place) => place.building);
@@ -77,6 +124,7 @@ export function toCampusSummaryDto(campus: CampusEntity): CampusSummaryDto {
     name: campus.name,
     timezone: campus.timezone,
     boundaryGeoJson: campus.boundaryGeoJson,
+    extentGeoJson: campusExtent(campus),
     placeCount: places.length,
     buildingCount: buildings.length,
     floorCount: floorMaps.length,
@@ -91,6 +139,21 @@ export function toCampusDto(campus: CampusEntity): CampusDto {
       .slice()
       .sort((left, right) => left.name.localeCompare(right.name))
       .map(toCampusPlaceDto),
+  };
+}
+
+export function toRoomSearchResultDto(match: RoomSearchMatch): RoomSearchResultDto {
+  return {
+    roomId: match.room.id,
+    roomName: match.room.name,
+    floorMapId: match.floorMap.id,
+    floorLabel: match.floorMap.floorLabel,
+    buildingId: match.building.id,
+    campusPlaceId: match.place.id,
+    campusPlaceName: match.place.name,
+    campusId: match.campus.id,
+    campusName: match.campus.name,
+    bookableResourceId: match.room.bookableResource?.id ?? null,
   };
 }
 

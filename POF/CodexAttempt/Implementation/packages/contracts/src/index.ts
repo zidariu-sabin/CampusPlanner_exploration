@@ -78,6 +78,11 @@ export interface CampusSummaryDto {
   name: string;
   timezone: string;
   boundaryGeoJson: GeoJsonPolygon | null;
+  /**
+   * Camera-fit extent for overviews: the campus boundary if set, otherwise the
+   * bounding rectangle of the campus's place footprints, or null if empty.
+   */
+  extentGeoJson: GeoJsonPolygon | null;
   placeCount: number;
   buildingCount: number;
   floorCount: number;
@@ -163,6 +168,23 @@ export interface FloorMapDto extends FloorMapSummaryDto {
 /** Compatibility aliases: older frontend code refers to floor maps as "maps". */
 export type MapSummaryDto = FloorMapSummaryDto;
 export type MapDto = FloorMapDto;
+
+/**
+ * A room match returned by the org-wide room search, carrying the full
+ * campus → space → floor context needed to drive the map selection chain.
+ */
+export interface RoomSearchResultDto {
+  roomId: string;
+  roomName: string;
+  floorMapId: string;
+  floorLabel: string;
+  buildingId: string;
+  campusPlaceId: string;
+  campusPlaceName: string;
+  campusId: string;
+  campusName: string;
+  bookableResourceId: string | null;
+}
 
 export interface MeetingDto {
   id: string;

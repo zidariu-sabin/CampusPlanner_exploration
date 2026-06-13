@@ -7,6 +7,7 @@ import {
   CampusSummaryDto,
   FloorMapDto,
   FloorMapSummaryDto,
+  RoomSearchResultDto,
 } from '@campus/contracts';
 
 import { MemberMapboxViewComponent } from '../components/member-mapbox-view.component';
@@ -148,6 +149,48 @@ import { MapsService } from '../core/maps.service';
             }
           </header>
           <div class="panel-body">
+            <div class="map-search">
+              <div class="map-search-field">
+                <span class="map-search-icon" aria-hidden="true">⌕</span>
+                <input
+                  type="search"
+                  placeholder="Search for a room…"
+                  autocomplete="off"
+                  [value]="searchTerm()"
+                  (input)="onSearchInput($any($event.target).value)"
+                  (focus)="searchOpen.set(true)"
+                  (blur)="closeSearch()"
+                />
+                @if (searchTerm()) {
+                  <button type="button" class="map-search-clear" (click)="clearSearch()" aria-label="Clear search">
+                    ×
+                  </button>
+                }
+              </div>
+
+              @if (searchOpen() && searchTerm().trim().length >= 2) {
+                <div class="map-search-results">
+                  @if (searching()) {
+                    <p class="map-search-hint">Searching…</p>
+                  } @else if (searchResults().length === 0) {
+                    <p class="map-search-hint">No rooms match “{{ searchTerm() }}”.</p>
+                  } @else {
+                    @for (result of searchResults(); track result.roomId) {
+                      <button
+                        type="button"
+                        class="map-search-result"
+                        (mousedown)="$event.preventDefault()"
+                        (click)="goToRoom(result)"
+                      >
+                        <strong>{{ result.roomName }}</strong>
+                        <span>{{ result.campusName }} · {{ result.campusPlaceName }} · {{ result.floorLabel }}</span>
+                      </button>
+                    }
+                  }
+                </div>
+              }
+            </div>
+
             <app-member-mapbox-view
               [campuses]="campuses()"
               [selectedCampus]="selectedCampus()"
@@ -187,6 +230,103 @@ import { MapsService } from '../core/maps.service';
       min-height: 540px;
     }
 
+    .map-search {
+      position: relative;
+      margin-bottom: 12px;
+      z-index: 5;
+    }
+
+    .map-search-field {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .map-search-icon {
+      position: absolute;
+      left: 12px;
+      font-size: 16px;
+      color: var(--muted, #6b7280);
+      pointer-events: none;
+    }
+
+    .map-search-field input {
+      width: 100%;
+      padding: 10px 36px 10px 34px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font-size: 14px;
+      background: #fff;
+    }
+
+    .map-search-field input:focus {
+      outline: none;
+      border-color: var(--strong, #0f766e);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    }
+
+    .map-search-clear {
+      position: absolute;
+      right: 8px;
+      width: 22px;
+      height: 22px;
+      border: none;
+      border-radius: 50%;
+      background: #eef1f1;
+      color: #374151;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .map-search-results {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      max-height: 280px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+      padding: 6px;
+    }
+
+    .map-search-hint {
+      margin: 0;
+      padding: 10px 12px;
+      color: var(--muted, #6b7280);
+      font-size: 13px;
+    }
+
+    .map-search-result {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      width: 100%;
+      text-align: left;
+      padding: 9px 12px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .map-search-result:hover {
+      background: #f3f6f6;
+    }
+
+    .map-search-result strong {
+      font-size: 14px;
+      color: var(--ink, #111827);
+    }
+
+    .map-search-result span {
+      font-size: 12px;
+      color: var(--muted, #6b7280);
+    }
+
     .room-bar {
       display: flex;
       justify-content: space-between;
@@ -219,6 +359,13 @@ export class MemberMapPageComponent {
   protected readonly loadingFloors = signal(false);
   protected readonly loadingFloorMap = signal(false);
   protected readonly error = signal('');
+
+  protected readonly searchTerm = signal('');
+  protected readonly searchResults = signal<RoomSearchResultDto[]>([]);
+  protected readonly searching = signal(false);
+  protected readonly searchOpen = signal(false);
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  private searchSeq = 0;
 
   protected readonly places = computed(() => this.selectedCampus()?.places ?? []);
 
@@ -316,6 +463,89 @@ export class MemberMapPageComponent {
     if (place) {
       void this.selectPlace(place);
     }
+  }
+
+  // ---- Room search -------------------------------------------------------
+
+  protected onSearchInput(value: string): void {
+    this.searchTerm.set(value);
+    this.searchOpen.set(true);
+
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+
+    const term = value.trim();
+    if (term.length < 2) {
+      this.searchResults.set([]);
+      this.searching.set(false);
+      return;
+    }
+
+    this.searching.set(true);
+    this.searchTimer = setTimeout(() => void this.runSearch(term), 250);
+  }
+
+  private async runSearch(term: string): Promise<void> {
+    const seq = ++this.searchSeq;
+    try {
+      const results = await this.campusesService.searchRooms(term);
+      if (seq === this.searchSeq) {
+        this.searchResults.set(results);
+      }
+    } catch {
+      if (seq === this.searchSeq) {
+        this.searchResults.set([]);
+      }
+    } finally {
+      if (seq === this.searchSeq) {
+        this.searching.set(false);
+      }
+    }
+  }
+
+  protected closeSearch(): void {
+    // Defer so a result click registers before the dropdown is hidden on blur.
+    setTimeout(() => this.searchOpen.set(false), 150);
+  }
+
+  protected clearSearch(): void {
+    this.searchSeq++;
+    this.searchTerm.set('');
+    this.searchResults.set([]);
+    this.searching.set(false);
+    this.searchOpen.set(false);
+  }
+
+  protected async goToRoom(result: RoomSearchResultDto): Promise<void> {
+    this.searchTerm.set(result.roomName);
+    this.searchResults.set([]);
+    this.searchOpen.set(false);
+    this.error.set('');
+
+    if (this.selectedCampus()?.id !== result.campusId) {
+      const campus = this.campuses().find((item) => item.id === result.campusId);
+      if (campus) {
+        await this.selectCampus(campus);
+      }
+    }
+
+    if (this.selectedPlace()?.id !== result.campusPlaceId) {
+      const place = this.places().find((item) => item.id === result.campusPlaceId);
+      if (place) {
+        await this.selectPlace(place);
+      }
+    }
+
+    if (this.selectedFloor()?.id !== result.floorMapId) {
+      const floor = this.floors().find((item) => item.id === result.floorMapId);
+      if (floor) {
+        await this.selectFloor(floor);
+      }
+    }
+
+    this.selectedRoomId.set(result.roomId);
   }
 
   protected canvasTitle(): string {

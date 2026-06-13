@@ -9,12 +9,18 @@ import {
   deletePlace,
   getCampusOrFail,
   listCampuses,
+  searchRooms,
   updateCampus,
   updatePlace,
 } from '../services/campus.service.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
-import { toCampusDto, toCampusPlaceDto, toCampusSummaryDto } from '../utils/serializers.js';
+import {
+  toCampusDto,
+  toCampusPlaceDto,
+  toCampusSummaryDto,
+  toRoomSearchResultDto,
+} from '../utils/serializers.js';
 
 function routeParam(value: string | string[] | undefined, name: string): string {
   if (typeof value === 'string' && value.length > 0) {
@@ -46,6 +52,19 @@ campusesRouter.get(
   asyncHandler(async (request, response) => {
     const campuses = await listCampuses(request.user!.organizationId);
     response.json(campuses.map(toCampusSummaryDto));
+  }),
+);
+
+campusesRouter.get(
+  '/rooms/search',
+  asyncHandler(async (request, response) => {
+    const query = typeof request.query.q === 'string' ? request.query.q : '';
+    if (query.trim().length === 0) {
+      response.json([]);
+      return;
+    }
+    const matches = await searchRooms(request.user!.organizationId, query);
+    response.json(matches.map(toRoomSearchResultDto));
   }),
 );
 
