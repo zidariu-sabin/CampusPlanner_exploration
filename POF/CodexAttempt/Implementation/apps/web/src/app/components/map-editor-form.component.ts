@@ -320,9 +320,35 @@ export type MapEditorWorkflow = 'map' | 'rooms';
       align-content: start;
     }
 
-    .rooms-side .room-list {
-      min-height: 420px;
-      max-height: 60vh;
+    /* The forms column (room list + GeoJSON preview) fits the screen: it's
+       capped to the viewport and each part scrolls inside its own box. The
+       canvas/container is free to exceed the screen. */
+    .rooms-layout .rooms-side {
+      max-height: calc(100vh - 120px);
+      min-height: 0;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .rooms-layout .rooms-form {
+      min-height: 0;
+    }
+
+    .rooms-layout .rooms-form .room-list {
+      min-height: 160px;
+      max-height: 40vh;
+      overflow: auto;
+    }
+
+    .rooms-layout .rooms-preview {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .rooms-layout .rooms-preview .json-preview {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
       overflow: auto;
     }
 

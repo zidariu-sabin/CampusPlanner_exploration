@@ -217,6 +217,38 @@ const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00
       color: var(--ink);
       font-weight: 700;
     }
+
+    /* Available rooms list fits the screen: the panel is capped to the viewport,
+       the header stays fixed and the list scrolls internally. */
+    .map-layout > .panel:first-child {
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 180px);
+    }
+
+    .map-layout > .panel:first-child > .panel-header {
+      flex: 0 0 auto;
+    }
+
+    .map-layout > .panel:first-child > .panel-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    /* Booking form: NO inner scroll — keep it compact so it fits the screen. */
+    .map-layout > .panel:last-child > .panel-body {
+      gap: 8px;
+    }
+
+    .map-layout > .panel:last-child textarea {
+      min-height: 52px;
+    }
+
+    .map-layout > .panel:last-child .booking-summary,
+    .map-layout > .panel:last-child .booking-detail-card {
+      margin: 2px 0;
+    }
   `,
 })
 export class BookingPageComponent {
