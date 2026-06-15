@@ -78,11 +78,6 @@ export interface CampusSummaryDto {
   name: string;
   timezone: string;
   boundaryGeoJson: GeoJsonPolygon | null;
-  /**
-   * Camera-fit extent for overviews: the campus boundary if set, otherwise the
-   * bounding rectangle of the campus's place footprints, or null if empty.
-   */
-  extentGeoJson: GeoJsonPolygon | null;
   placeCount: number;
   buildingCount: number;
   floorCount: number;

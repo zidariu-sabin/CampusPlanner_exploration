@@ -44,6 +44,11 @@ const SPACES_SOURCE_ID = 'footprint-spaces-source';
 const SPACES_FILL_LAYER_ID = 'footprint-spaces-fill';
 const SPACES_LINE_LAYER_ID = 'footprint-spaces-line';
 const SPACES_LABEL_LAYER_ID = 'footprint-spaces-label';
+// Static, non-editable render of the current footprint shown while idle (before
+// the user clicks "Edit vertices"/"Draw footprint", which hand it to mapbox-gl-draw).
+const FOOTPRINT_SOURCE_ID = 'footprint-display-source';
+const FOOTPRINT_FILL_LAYER_ID = 'footprint-display-fill';
+const FOOTPRINT_LINE_LAYER_ID = 'footprint-display-line';
 
 export interface SelectableFootprint {
   id: string;
@@ -256,7 +261,10 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
     this.syncSpacesLayer();
     this.syncPlanImageOverlay();
     this.syncDrawFromInput(true, true);
-    if (!this.footprint && this.referenceFootprint) {
+    this.syncFootprintDisplay();
+    if (this.footprint) {
+      this.fitToFootprint(this.footprint);
+    } else if (!this.footprint && this.referenceFootprint) {
       this.fitToFootprint(this.referenceFootprint);
     } else if (!this.footprint && this.fitToSpaces()) {
       // Campus without a drawn boundary but with defined spaces: fit to them.
@@ -296,8 +304,14 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
 
   ngOnChanges(changes: SimpleChanges): void {
     if ('footprint' in changes) {
+      const previous = serializeFootprint(changes['footprint'].previousValue ?? null);
       this.syncDrawFromInput(false);
+      this.syncFootprintDisplay();
       this.syncPlanImageOverlay();
+      // When a footprint appears/changes externally while idle, bring it into view.
+      if (this.mode() === 'idle' && this.footprint && serializeFootprint(this.footprint) !== previous) {
+        this.fitToFootprint(this.footprint);
+      }
     }
 
     if ('backgroundUrl' in changes || 'backgroundDraft' in changes) {
@@ -342,6 +356,7 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
     this.error.set('');
     this.status.set('Click the map to draw a replacement footprint.');
     this.mode.set('draw');
+    this.removeFootprintDisplay();
     this.syncingFromInput = true;
     this.draw.deleteAll();
     this.featureId = null;
@@ -350,7 +365,7 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
   }
 
   protected editVertices(): void {
-    if (!this.draw || !this.featureId) {
+    if (!this.draw || !this.footprint) {
       this.error.set('Draw or load a footprint before editing vertices.');
       return;
     }
@@ -358,7 +373,19 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
     this.error.set('');
     this.status.set('Drag vertices to adjust the footprint.');
     this.mode.set('edit');
-    this.draw.changeMode('direct_select', { featureId: this.featureId });
+    this.removeFootprintDisplay();
+
+    // Hand the static footprint to mapbox-gl-draw so its vertices become editable.
+    this.syncingFromInput = true;
+    this.draw.deleteAll();
+    const ids = this.draw.add(toPolygonFeature(this.footprint));
+    this.featureId = ids[0] ?? null;
+    this.lastSyncedFootprint = serializeFootprint(this.footprint);
+    this.syncingFromInput = false;
+
+    if (this.featureId) {
+      this.draw.changeMode('direct_select', { featureId: this.featureId });
+    }
   }
 
   protected cancelInteraction(): void {
@@ -369,11 +396,16 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
     this.error.set('');
     this.status.set('');
     this.mode.set('idle');
-    this.syncDrawFromInput(false, true);
+    this.syncingFromInput = true;
+    this.draw.deleteAll();
+    this.featureId = null;
+    this.syncingFromInput = false;
+    this.lastSyncedFootprint = serializeFootprint(this.footprint);
+    this.syncFootprintDisplay();
   }
 
   protected canEditVertices(): boolean {
-    return !!this.featureId;
+    return !!this.footprint;
   }
 
   protected setMapStyle(key: MapStyleKey): void {
@@ -452,6 +484,21 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
       return;
     }
 
+    // While idle the footprint is shown via the static, non-editable display layer
+    // (see syncFootprintDisplay) — keep mapbox-gl-draw empty so nothing is editable
+    // until the user explicitly enters "Draw footprint" or "Edit vertices".
+    if (this.mode() === 'idle') {
+      this.syncingFromInput = true;
+      this.draw.deleteAll();
+      this.featureId = null;
+      this.syncingFromInput = false;
+      if (fitToFootprint && this.footprint) {
+        this.fitToFootprint(this.footprint);
+      }
+      this.lastSyncedFootprint = serialized;
+      return;
+    }
+
     this.syncingFromInput = true;
     this.draw.deleteAll();
     this.featureId = null;
@@ -469,6 +516,69 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
 
     this.lastSyncedFootprint = serialized;
     this.syncingFromInput = false;
+  }
+
+  /**
+   * Renders the current footprint as a static, non-editable polygon while idle.
+   * Hidden in draw/edit mode, where mapbox-gl-draw owns the geometry instead.
+   */
+  private syncFootprintDisplay(): void {
+    const map = this.map;
+    if (!map || !this.mapLoaded) {
+      return;
+    }
+
+    const show = this.mode() === 'idle' && !!this.footprint;
+    if (!show) {
+      this.removeFootprintDisplay();
+      return;
+    }
+
+    const data = {
+      type: 'Feature',
+      properties: {},
+      geometry: this.footprint as Polygon,
+    } satisfies Feature<Polygon>;
+
+    const source = map.getSource(FOOTPRINT_SOURCE_ID) as GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data);
+      return;
+    }
+
+    const sat = this.selectedStyle() === 'standard-satellite';
+    map.addSource(FOOTPRINT_SOURCE_ID, { type: 'geojson', data });
+    map.addLayer({
+      id: FOOTPRINT_FILL_LAYER_ID,
+      type: 'fill',
+      source: FOOTPRINT_SOURCE_ID,
+      paint: { 'fill-color': '#0f766e', 'fill-opacity': sat ? 0.25 : 0.18 },
+    });
+    map.addLayer({
+      id: FOOTPRINT_LINE_LAYER_ID,
+      type: 'line',
+      source: FOOTPRINT_SOURCE_ID,
+      paint: {
+        'line-color': sat ? '#ffffff' : '#0f3d3e',
+        'line-width': sat ? 4 : 3,
+      },
+    });
+  }
+
+  private removeFootprintDisplay(): void {
+    const map = this.map;
+    if (!map) {
+      return;
+    }
+    if (map.getLayer(FOOTPRINT_LINE_LAYER_ID)) {
+      map.removeLayer(FOOTPRINT_LINE_LAYER_ID);
+    }
+    if (map.getLayer(FOOTPRINT_FILL_LAYER_ID)) {
+      map.removeLayer(FOOTPRINT_FILL_LAYER_ID);
+    }
+    if (map.getSource(FOOTPRINT_SOURCE_ID)) {
+      map.removeSource(FOOTPRINT_SOURCE_ID);
+    }
   }
 
   private syncPlanImageOverlay(): void {
@@ -732,9 +842,24 @@ export class MapboxFootprintPickerComponent implements AfterViewInit, OnChanges,
 
     this.featureId = polygonFeature.id === undefined ? this.featureId : String(polygonFeature.id);
     this.lastSyncedFootprint = serializeFootprint(polygon);
-    this.mode.set('idle');
-    this.status.set('Footprint updated from Mapbox.');
     this.footprintChange.emit(polygon);
+
+    if (this.mode() === 'draw') {
+      // A fresh polygon was just completed: keep it editable as vertices instead of
+      // dropping straight to the static display, so the user can refine it.
+      this.mode.set('edit');
+      this.status.set('Drag vertices to adjust the footprint.');
+      const featureId = this.featureId;
+      if (featureId) {
+        setTimeout(() => {
+          if (!this.destroyed && this.draw && this.mode() === 'edit') {
+            this.draw.changeMode('direct_select', { featureId });
+          }
+        });
+      }
+    } else {
+      this.status.set('Footprint updated from Mapbox.');
+    }
   }
 
   private centerOnUserOnce(): void {

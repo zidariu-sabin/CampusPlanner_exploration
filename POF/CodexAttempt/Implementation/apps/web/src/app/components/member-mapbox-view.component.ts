@@ -272,7 +272,7 @@ export class MemberMapboxViewComponent implements AfterViewInit, OnChanges, OnDe
     const data: FeatureCollection<Polygon> = {
       type: 'FeatureCollection',
       features: this.campuses
-        .filter((campus) => !!(campus.extentGeoJson ?? campus.boundaryGeoJson))
+        .filter((campus) => !!campus.boundaryGeoJson)
         .map((campus) => ({
           type: 'Feature',
           properties: {
@@ -280,7 +280,7 @@ export class MemberMapboxViewComponent implements AfterViewInit, OnChanges, OnDe
             name: campus.name,
             selected: campus.id === this.selectedCampusId,
           },
-          geometry: (campus.extentGeoJson ?? campus.boundaryGeoJson) as Polygon,
+          geometry: campus.boundaryGeoJson as Polygon,
         })),
     };
 
@@ -619,8 +619,8 @@ export class MemberMapboxViewComponent implements AfterViewInit, OnChanges, OnDe
     } else {
       key = `all:${this.campuses.map((campus) => campus.id).join(',')}`;
       rings = this.campuses
-        .filter((campus) => !!(campus.extentGeoJson ?? campus.boundaryGeoJson))
-        .map((campus) => ((campus.extentGeoJson ?? campus.boundaryGeoJson) as Polygon).coordinates[0] ?? []);
+        .filter((campus) => !!campus.boundaryGeoJson)
+        .map((campus) => (campus.boundaryGeoJson as Polygon).coordinates[0] ?? []);
     }
 
     if (!force && key === this.lastFitKey) {
@@ -651,7 +651,7 @@ export class MemberMapboxViewComponent implements AfterViewInit, OnChanges, OnDe
     if (this.floorMap || this.selectedCampus) {
       return true;
     }
-    return this.campuses.some((campus) => !!(campus.extentGeoJson ?? campus.boundaryGeoJson));
+    return this.campuses.some((campus) => !!campus.boundaryGeoJson);
   }
 
   private centerOnUserOnce(): void {
