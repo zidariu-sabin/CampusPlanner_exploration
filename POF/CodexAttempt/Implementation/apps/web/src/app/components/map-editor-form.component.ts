@@ -73,7 +73,11 @@ export type MapEditorWorkflow = 'map' | 'rooms';
         <p class="message error">{{ error() }}</p>
       }
 
-      <section class="grid-2 editor-layout">
+      <section
+        class="grid-2 editor-layout"
+        [class.map-editor-layout]="workflow === 'map'"
+        [class.rooms-layout]="workflow === 'rooms'"
+      >
         @if (workflow === 'map') {
           <article class="card panel form-panel">
             <h2>Floor settings</h2>
@@ -197,11 +201,10 @@ export type MapEditorWorkflow = 'map' | 'rooms';
             (polygonRoomCreated)="addPolygonRoom($event)"
           />
         </article>
-      </section>
 
-      @if (workflow === 'rooms') {
-        <section class="grid-2">
-          <article class="card panel">
+        @if (workflow === 'rooms') {
+          <div class="rooms-side">
+          <article class="card panel rooms-form">
             <div class="section-header">
               <div>
                 <h2>Rooms</h2>
@@ -247,7 +250,7 @@ export type MapEditorWorkflow = 'map' | 'rooms';
             </div>
           </article>
 
-          <article class="card panel">
+          <article class="card panel rooms-preview">
             <div class="section-header">
               <div>
                 <h2>Rooms GeoJSON preview</h2>
@@ -274,8 +277,9 @@ export type MapEditorWorkflow = 'map' | 'rooms';
               }
             </div>
           </article>
-        </section>
-      }
+          </div>
+        }
+      </section>
     </div>
   `,
   styles: `
@@ -304,6 +308,48 @@ export type MapEditorWorkflow = 'map' | 'rooms';
 
     .editor-layout {
       align-items: start;
+    }
+
+    /* Rooms workflow: natural two-column flow like the "Select space" step —
+       canvas on the left, form + GeoJSON preview stacked on the right. Sizes are
+       natural (the column may exceed the canvas / page height); only the room
+       list scrolls so a long list doesn't push the preview off-screen. */
+    .rooms-side {
+      display: grid;
+      gap: 1.5rem;
+      align-content: start;
+    }
+
+    .rooms-side .room-list {
+      min-height: 420px;
+      max-height: 60vh;
+      overflow: auto;
+    }
+
+    /* Map workflow ("Upload & align"): the canvas stretches to match the Floor
+       settings form and fills its panel, but never grows past the screen so the
+       whole canvas stays visible. The form renders fully (no inner scroll); if
+       it's taller than the screen the container just stretches and the page
+       scrolls. */
+    .map-editor-layout,
+    .rooms-layout {
+      align-items: stretch;
+    }
+
+    .map-editor-layout .canvas-panel,
+    .rooms-layout .canvas-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .map-editor-layout .canvas-panel app-map-editor-canvas,
+    .rooms-layout .canvas-panel app-map-editor-canvas {
+      /* basis 0 so the SVG's intrinsic height doesn't inflate the row — the form
+         drives the height and the canvas matches it (rather than the reverse). */
+      flex: 1 1 0;
+      min-height: 0;
+      display: block;
     }
 
     .canvas-panel {

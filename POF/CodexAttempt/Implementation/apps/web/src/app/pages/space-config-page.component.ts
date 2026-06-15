@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import {
   CampusDto,
   CampusPlaceDto,
@@ -16,7 +16,7 @@ import { CampusesService } from '../core/campuses.service';
 import { FloorsService } from '../core/floors.service';
 import { MapsService } from '../core/maps.service';
 
-type SpaceConfigPanel = 'select' | 'align' | 'review';
+type SpaceConfigPanel = 'select' | 'align' | 'rooms' | 'review';
 
 @Component({
   selector: 'app-space-config-page',
@@ -52,8 +52,9 @@ type SpaceConfigPanel = 'select' | 'align' | 'review';
         </button>
         <button
           type="button"
+          [class.active]="panel() === 'rooms'"
           [disabled]="!selectedFloor()"
-          (click)="openEditor('rooms')"
+          (click)="showRooms()"
         >
           <span>3</span>
           <strong>Configure rooms</strong>
@@ -80,6 +81,13 @@ type SpaceConfigPanel = 'select' | 'align' | 'review';
           [buildingId]="creatingFloor() ? (selectedPlace()?.buildingId ?? null) : null"
           [seedCampusId]="creatingFloor() ? (campus()?.id ?? null) : null"
           [seedPlaceId]="creatingFloor() ? (selectedPlace()?.id ?? null) : null"
+          (floorSaved)="onFloorSaved($event)"
+        />
+      } @else if (panel() === 'rooms' && selectedFloor()) {
+        <app-map-editor-form
+          [embedded]="true"
+          workflow="rooms"
+          [mapId]="selectedFloor()?.id ?? null"
           (floorSaved)="onFloorSaved($event)"
         />
       } @else {
@@ -224,9 +232,9 @@ type SpaceConfigPanel = 'select' | 'align' | 'review';
                       Define at least one room in step 3 to make this floor usable for members.
                     }
                   </p>
-                  <a class="primary-action" [routerLink]="['/admin/floors', floor.id, 'edit', 'rooms']">
+                  <button class="primary-action" type="button" (click)="showRooms()">
                     Define rooms
-                  </a>
+                  </button>
                 </div>
               </div>
             </section>
@@ -260,7 +268,6 @@ type SpaceConfigPanel = 'select' | 'align' | 'review';
 })
 export class SpaceConfigPageComponent {
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
   private readonly campusesService = inject(CampusesService);
   private readonly floorsService = inject(FloorsService);
   private readonly mapsService = inject(MapsService);
@@ -424,12 +431,12 @@ export class SpaceConfigPageComponent {
     return 'Click a campus to load its spaces.';
   }
 
-  protected openEditor(workflow: 'map' | 'rooms'): void {
-    const floor = this.selectedFloor();
-    if (!floor) {
+  protected showRooms(): void {
+    if (!this.selectedFloor()) {
       return;
     }
-    void this.router.navigate(['/admin/floors', floor.id, 'edit', workflow]);
+    this.creatingFloor.set(false);
+    this.panel.set('rooms');
   }
 
   private async initialize(): Promise<void> {

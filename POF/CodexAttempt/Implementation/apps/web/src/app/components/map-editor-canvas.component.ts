@@ -213,9 +213,10 @@ type InteractionState =
             />
             <text
               class="room-label"
-              [attr.x]="roomLabelX(room)"
-              [attr.y]="roomLabelY(room)"
-              [attr.font-size]="labelFontSize()"
+              x="0"
+              y="0"
+              [attr.font-size]="LABEL_BASE_FONT"
+              [attr.transform]="roomLabelTransform(room)"
             >
               {{ room.name }}
             </text>
@@ -315,6 +316,7 @@ type InteractionState =
   styles: `
     .editor-svg {
       width: 100%;
+      height: 100%;
       min-height: 420px;
       border-radius: 22px;
       background:
@@ -503,12 +505,28 @@ export class MapEditorCanvasComponent {
 
   protected roomLabelY(room: EditorRoomModel): number {
     const box = getProjectedBoundingBox(roomModelToPolygon(room));
-    return box.minY + Math.min(Math.max(box.height * 0.3, this.labelFontSize()), box.height * 0.75);
+    return box.minY + Math.min(Math.max(box.height * 0.3, this.labelFontSize(room)), box.height * 0.75);
   }
 
-  protected labelFontSize(): number {
-    const shortSide = Math.min(this.bounds().width, this.bounds().height);
-    return Math.min(Math.max(shortSide * 0.035, 1.8), 6);
+  /**
+   * The text is drawn at a deliberately large `font-size` ({@link LABEL_BASE_FONT})
+   * and visually shrunk via a `scale()` transform. Browsers floor the *computed*
+   * font-size at their minimum-font-size setting, which silently ignores small
+   * user-unit font sizes; scaling sidesteps that clamp so the label actually
+   * tracks the room size.
+   */
+  protected readonly LABEL_BASE_FONT = 12;
+
+  protected roomLabelTransform(room: EditorRoomModel): string {
+    const scale = this.labelFontSize(room) / this.LABEL_BASE_FONT;
+    return `translate(${this.roomLabelX(room)} ${this.roomLabelY(room)}) scale(${scale})`;
+  }
+
+  /** Label size is keyed off each room's own footprint so it stays inside the shape. */
+  protected labelFontSize(room: EditorRoomModel): number {
+    const box = getProjectedBoundingBox(roomModelToPolygon(room));
+    const shortSide = Math.min(box.width, box.height);
+    return Math.min(Math.max(shortSide * 0.16, 0.8), 3);
   }
 
   protected handleRadius(): number {
