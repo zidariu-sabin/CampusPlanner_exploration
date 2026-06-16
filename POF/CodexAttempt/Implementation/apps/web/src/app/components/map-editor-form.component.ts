@@ -33,6 +33,7 @@ import { MapsService } from '../core/maps.service';
 import { ImageManipulationToolsComponent } from './image-manipulation-tools.component';
 import { MapEditorCanvasComponent } from './map-editor-canvas.component';
 import { MapboxFootprintPickerComponent } from './mapbox-footprint-picker.component';
+import { BadgeComponent, ButtonDirective } from '../ui';
 
 export type MapEditorWorkflow = 'map' | 'rooms';
 
@@ -46,6 +47,8 @@ export type MapEditorWorkflow = 'map' | 'rooms';
     ImageManipulationToolsComponent,
     MapEditorCanvasComponent,
     MapboxFootprintPickerComponent,
+    BadgeComponent,
+    ButtonDirective,
   ],
   template: `
     <div class="editor-form" [class.page]="!embedded" [class.embedded-form]="embedded">
@@ -54,13 +57,13 @@ export type MapEditorWorkflow = 'map' | 'rooms';
           <h1>{{ headerTitle() }}</h1>
           <p class="muted">{{ headerSubtitle() }}</p>
         </div>
-        <div class="chips">
-          <span class="chip">SVG editor</span>
-          <span class="chip">GeoJSON native</span>
+        <div class="flex flex-wrap gap-2">
+          <app-badge>SVG editor</app-badge>
+          <app-badge>GeoJSON native</app-badge>
           @if (workflow === 'map') {
-            <span class="chip">Image tools</span>
+            <app-badge>Image tools</app-badge>
           } @else {
-            <span class="chip">Room boundaries</span>
+            <app-badge>Room boundaries</app-badge>
           }
         </div>
       </section>
@@ -120,13 +123,13 @@ export type MapEditorWorkflow = 'map' | 'rooms';
 
             <div class="actions">
               @if (!lockFootprint) {
-                <button type="button" class="ghost" (click)="loadSampleFootprint()">
+                <button uiBtn="secondary" type="button" (click)="loadSampleFootprint()">
                   Use sample footprint
                 </button>
               }
-              <button type="button" (click)="saveMap()">Save floor</button>
+              <button uiBtn type="button" (click)="saveMap()">Save floor</button>
               @if (mapId() && !lockFootprint) {
-                <a class="button ghost" [routerLink]="['/admin/floors', mapId(), 'edit', 'rooms']">
+                <a uiBtn="secondary" [routerLink]="['/admin/floors', mapId(), 'edit', 'rooms']">
                   Define rooms
                 </a>
               }
@@ -139,37 +142,33 @@ export type MapEditorWorkflow = 'map' | 'rooms';
             <h2>Editor canvas</h2>
             <div class="actions">
               @if (workflow === 'rooms') {
-                <div class="segmented" aria-label="Room shape">
+                <div class="flex gap-1 rounded-lg border border-line bg-panel-soft p-1" role="group" aria-label="Room shape">
                   <button
                     type="button"
-                    class="ghost"
-                    [class.active]="roomShape() === 'rectangle'"
+                    class="rounded-md px-3 py-1.5 text-xs font-bold transition-colors"
+                    [class]="roomShape() === 'rectangle' ? 'bg-strong text-white' : 'bg-transparent text-muted hover:text-ink'"
                     (click)="setRoomShape('rectangle')"
                   >
                     Square
                   </button>
                   <button
                     type="button"
-                    class="ghost"
-                    [class.active]="roomShape() === 'polygon'"
+                    class="rounded-md px-3 py-1.5 text-xs font-bold transition-colors"
+                    [class]="roomShape() === 'polygon' ? 'bg-strong text-white' : 'bg-transparent text-muted hover:text-ink'"
                     (click)="setRoomShape('polygon')"
                   >
                     Polygon
                   </button>
                 </div>
-                <button type="button" class="ghost" (click)="exportSvg()">Export SVG</button>
-                <button type="button" class="ghost" (click)="addRoom()">
+                <button uiBtn="secondary" type="button" (click)="exportSvg()">Export SVG</button>
+                <button uiBtn="secondary" type="button" (click)="addRoom()">
                   {{ roomShape() === 'polygon' ? 'Start polygon' : 'Add square' }}
                 </button>
                 @if (selectedRoom()) {
-                  <button type="button" class="danger" (click)="removeSelectedRoom()">
-                    Delete room
-                  </button>
+                  <button uiBtn="danger" type="button" (click)="removeSelectedRoom()">Delete room</button>
                 }
               } @else if (mapId()) {
-                <a class="button ghost" [routerLink]="['/admin/floors', mapId(), 'edit']">
-                  Editor dashboard
-                </a>
+                <a uiBtn="secondary" [routerLink]="['/admin/floors', mapId(), 'edit']">Editor dashboard</a>
               }
             </div>
           </div>
@@ -210,7 +209,7 @@ export type MapEditorWorkflow = 'map' | 'rooms';
                 <h2>Rooms</h2>
                 <p class="muted">Name, color, and adjust room geometry directly on the canvas.</p>
               </div>
-              <span class="chip">{{ rooms().length }} rooms</span>
+              <app-badge>{{ rooms().length }} rooms</app-badge>
             </div>
             <div class="room-list">
               @for (room of rooms(); track room.id) {
@@ -256,7 +255,7 @@ export type MapEditorWorkflow = 'map' | 'rooms';
                 <h2>Rooms GeoJSON preview</h2>
                 <p class="muted">This matches the rooms array sent to the API when you save.</p>
               </div>
-              <span class="chip">{{ rooms().length }} room payloads</span>
+              <app-badge>{{ rooms().length }} room payloads</app-badge>
             </div>
             @if (rooms().length > 0) {
               <pre class="json-preview">{{ roomsPayloadPreview() }}</pre>
@@ -269,9 +268,9 @@ export type MapEditorWorkflow = 'map' | 'rooms';
               </p>
             }
             <div class="actions top-gap">
-              <button type="button" (click)="saveRooms()" [disabled]="!mapId()">Save rooms</button>
+              <button uiBtn type="button" (click)="saveRooms()" [disabled]="!mapId()">Save rooms</button>
               @if (mapId()) {
-                <a class="button ghost" [routerLink]="['/admin/floors', mapId(), 'edit', 'map']">
+                <a uiBtn="secondary" [routerLink]="['/admin/floors', mapId(), 'edit', 'map']">
                   Floor plan & alignment
                 </a>
               }
@@ -291,8 +290,8 @@ export type MapEditorWorkflow = 'map' | 'rooms';
     .embedded-form {
       padding: 1.5rem;
       border: 1px solid var(--line);
-      border-radius: 28px;
-      background: rgba(255, 255, 255, 0.45);
+      border-radius: 12px;
+      background: var(--panel-soft);
     }
 
     .panel {
@@ -366,7 +365,11 @@ export type MapEditorWorkflow = 'map' | 'rooms';
     .rooms-layout .canvas-panel {
       display: flex;
       flex-direction: column;
-      min-height: 0;
+      /* A real floor so the canvas is always usably tall; the SVG fills this
+         flex space (no hard min-height of its own) and preserveAspectRatio=meet
+         shows the whole footprint, so the panel never clips it. The form column
+         can still make it taller via the stretch alignment. */
+      min-height: 520px;
     }
 
     .map-editor-layout .canvas-panel app-map-editor-canvas,
@@ -391,18 +394,6 @@ export type MapEditorWorkflow = 'map' | 'rooms';
       flex-wrap: wrap;
     }
 
-    .segmented {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .segmented .active {
-      background: rgba(14, 116, 144, 0.1);
-      border-color: rgba(14, 116, 144, 0.35);
-      color: var(--ink);
-    }
-
     .room-list {
       display: grid;
       gap: 0.85rem;
@@ -410,15 +401,16 @@ export type MapEditorWorkflow = 'map' | 'rooms';
 
     .room-item {
       border: 1px solid var(--line);
-      border-radius: 20px;
+      border-radius: 10px;
       padding: 1rem;
       display: grid;
       gap: 0.75rem;
+      cursor: pointer;
     }
 
     .room-item.selected {
-      border-color: rgba(14, 116, 144, 0.35);
-      background: rgba(14, 116, 144, 0.05);
+      border-color: var(--green);
+      background: var(--green-soft);
     }
 
     .room-item-header {
@@ -440,8 +432,8 @@ export type MapEditorWorkflow = 'map' | 'rooms';
     .json-preview {
       margin: 0;
       padding: 1rem;
-      border-radius: 18px;
-      background: rgba(15, 23, 42, 0.04);
+      border-radius: 8px;
+      background: var(--panel-inset);
       overflow: auto;
       max-height: 360px;
     }

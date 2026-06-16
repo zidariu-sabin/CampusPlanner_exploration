@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -6,6 +5,7 @@ import { CampusSummaryDto, FloorMapSummaryDto } from '@campus/contracts';
 
 import { CampusesService } from '../core/campuses.service';
 import { MapsService } from '../core/maps.service';
+import { BadgeComponent, ButtonDirective, MetricComponent, PanelComponent } from '../ui';
 
 interface AttentionItem {
   label: string;
@@ -18,146 +18,111 @@ interface AttentionItem {
 @Component({
   selector: 'app-admin-dashboard-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    ButtonDirective,
+    PanelComponent,
+    MetricComponent,
+    BadgeComponent,
+  ],
   template: `
-    <div class="screen-shell">
+    <div class="grid content-start gap-4">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
 
       @if (showAddCampus()) {
-        <section class="panel">
-          <header class="panel-header">
-            <div>
-              <h3>Add campus</h3>
-              <p>Create a new campus and start configuring its footprint.</p>
-            </div>
-            <button class="secondary-action" type="button" (click)="toggleAddCampus()">Close</button>
-          </header>
-          <div class="panel-body">
-            <form class="add-campus" [formGroup]="campusForm" (ngSubmit)="createCampus()">
-              <label>
-                Campus name
-                <input type="text" formControlName="name" placeholder="North Campus" />
-              </label>
-              <label>
-                Timezone
-                <input type="text" formControlName="timezone" placeholder="Europe/Bucharest" />
-              </label>
-              <button class="primary-action" type="submit" [disabled]="creating() || campusForm.invalid">
-                {{ creating() ? 'Creating…' : 'Create campus' }}
-              </button>
-            </form>
-          </div>
-        </section>
+        <app-panel heading="Add campus" sub="Create a new campus and start configuring its footprint.">
+          <button panelAction uiBtn="secondary" type="button" (click)="toggleAddCampus()">Close</button>
+          <form
+            class="grid gap-3 md:grid-cols-[1.4fr_1fr_auto] md:items-end"
+            [formGroup]="campusForm"
+            (ngSubmit)="createCampus()"
+          >
+            <label>
+              Campus name
+              <input type="text" formControlName="name" placeholder="North Campus" />
+            </label>
+            <label>
+              Timezone
+              <input type="text" formControlName="timezone" placeholder="Europe/Bucharest" />
+            </label>
+            <button uiBtn type="submit" [disabled]="creating() || campusForm.invalid">
+              {{ creating() ? 'Creating…' : 'Create campus' }}
+            </button>
+          </form>
+        </app-panel>
       }
 
       @if (loading()) {
-        <p class="muted">Loading dashboard…</p>
+        <p class="text-sm text-muted">Loading dashboard…</p>
       } @else {
-        <section class="metrics-grid">
-          <article class="metric">
-            <span>Campuses</span>
-            <strong>{{ campuses().length }}</strong>
-          </article>
-          <article class="metric">
-            <span>Floor maps</span>
-            <strong>{{ maps().length }}</strong>
-          </article>
-          <article class="metric">
-            <span>Rooms</span>
-            <strong>{{ totalRooms() }}</strong>
-          </article>
-          <article class="metric metric-warn">
-            <span>Open issues</span>
-            <strong>{{ attentionItems().length }}</strong>
-          </article>
+        <section class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <app-metric label="Campuses" [value]="campuses().length" />
+          <app-metric label="Floor maps" [value]="maps().length" />
+          <app-metric label="Rooms" [value]="totalRooms()" />
+          <app-metric label="Open issues" [value]="attentionItems().length" tone="warn" />
         </section>
 
-        <section class="two-column">
-          <section class="panel">
-            <header class="panel-header">
-              <div>
-                <h3>Campus portfolio</h3>
-                <p>Operational status by site</p>
-              </div>
-              <button class="secondary-action" type="button" (click)="toggleAddCampus()">
-                {{ showAddCampus() ? 'Close' : 'Add campus' }}
-              </button>
-            </header>
-            <div class="panel-body">
+        <section class="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,0.55fr)]">
+          <app-panel heading="Campus portfolio" sub="Operational status by site">
+            <button panelAction uiBtn="secondary" type="button" (click)="toggleAddCampus()">
+              {{ showAddCampus() ? 'Close' : 'Add campus' }}
+            </button>
+            <div class="grid gap-2.5">
               @if (campuses().length === 0) {
-                <p class="muted">No campuses yet. Use “Add campus” to start configuring your portfolio.</p>
+                <p class="text-sm text-muted">
+                  No campuses yet. Use “Add campus” to start configuring your portfolio.
+                </p>
               }
-
-              <div class="card-list">
-                @for (campus of campuses(); track campus.id) {
-                  <a class="campus-card" [routerLink]="['/admin/campuses', campus.id]">
-                    <div>
-                      <h3>{{ campus.name }}</h3>
-                      <p>
-                        {{ campus.buildingCount }} buildings · {{ campus.floorCount }} floors ·
-                        {{ campus.roomCount }} rooms
-                      </p>
-                    </div>
-                    <div class="status-row">
-                      <span class="badge" [class.badge-good]="isConfigured(campus)" [class.badge-warn]="!isConfigured(campus)">
-                        {{ isConfigured(campus) ? 'Published' : 'Draft' }}
-                      </span>
-                      <span class="badge" [class.badge-warn]="issueCount(campus) > 0">
-                        {{ issueCount(campus) }} issues
-                      </span>
-                    </div>
-                  </a>
-                }
-              </div>
+              @for (campus of campuses(); track campus.id) {
+                <a
+                  class="grid gap-2.5 rounded-lg border border-line bg-panel p-3 text-ink transition-colors hover:border-green hover:bg-green-soft/30"
+                  [routerLink]="['/admin/campuses', campus.id]"
+                >
+                  <div>
+                    <h3 class="text-base font-bold">{{ campus.name }}</h3>
+                    <p class="mt-0.5 text-sm text-muted">
+                      {{ campus.buildingCount }} buildings · {{ campus.floorCount }} floors ·
+                      {{ campus.roomCount }} rooms
+                    </p>
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <app-badge [tone]="isConfigured(campus) ? 'good' : 'warn'">
+                      {{ isConfigured(campus) ? 'Published' : 'Draft' }}
+                    </app-badge>
+                    <app-badge [tone]="issueCount(campus) > 0 ? 'warn' : 'neutral'">
+                      {{ issueCount(campus) }} issues
+                    </app-badge>
+                  </div>
+                </a>
+              }
             </div>
-          </section>
+          </app-panel>
 
-          <section class="panel">
-            <header class="panel-header">
-              <div>
-                <h3>Attention queue</h3>
-                <p>Work that blocks publishing</p>
-              </div>
-            </header>
-            <div class="panel-body">
+          <app-panel heading="Attention queue" sub="Work that blocks publishing">
+            <div class="grid gap-2.5">
               @if (attentionItems().length === 0) {
                 <p class="message success">Nothing needs attention. The portfolio is fully configured.</p>
               }
-
-              <div class="task-list">
-                @for (item of attentionItems(); track item.label) {
-                  <a class="task" [routerLink]="item.link" [title]="item.hint">
-                    <span>{{ item.label }}</span>
-                    <span class="badge" [class.badge-warn]="item.urgent">{{ item.tag }}</span>
-                  </a>
-                }
-              </div>
+              @for (item of attentionItems(); track item.label) {
+                <a
+                  class="flex items-center justify-between gap-3 rounded-lg border border-line bg-panel p-3 text-ink transition-colors hover:border-green hover:bg-green-soft/30"
+                  [routerLink]="item.link"
+                  [title]="item.hint"
+                >
+                  <span class="text-sm">{{ item.label }}</span>
+                  <app-badge [tone]="item.urgent ? 'warn' : 'neutral'">{{ item.tag }}</app-badge>
+                </a>
+              }
             </div>
-          </section>
+          </app-panel>
         </section>
       }
     </div>
   `,
-  styles: `
-    .add-campus {
-      display: grid;
-      grid-template-columns: 1.4fr 1fr auto;
-      gap: 12px;
-      align-items: end;
-    }
-
-    .add-campus button {
-      align-self: end;
-    }
-
-    @media (max-width: 900px) {
-      .add-campus {
-        grid-template-columns: 1fr;
-      }
-    }
-  `,
+  styles: ``,
 })
 export class AdminDashboardPageComponent {
   private readonly fb = inject(FormBuilder);

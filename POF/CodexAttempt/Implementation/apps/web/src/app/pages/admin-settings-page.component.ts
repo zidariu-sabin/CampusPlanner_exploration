@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { OrganizationInviteDto, OrganizationRole, UserSummaryDto } from '@campus/contracts';
@@ -6,178 +6,154 @@ import { OrganizationInviteDto, OrganizationRole, UserSummaryDto } from '@campus
 import { AuthService } from '../core/auth.service';
 import { OrganizationsService } from '../core/organizations.service';
 import { UsersService } from '../core/users.service';
+import { BadgeComponent, ButtonDirective, PanelComponent } from '../ui';
 
 @Component({
   selector: 'app-admin-settings-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [DatePipe, ReactiveFormsModule, ButtonDirective, PanelComponent, BadgeComponent],
   template: `
-    <div class="screen-shell">
+    <div class="grid content-start gap-4">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
 
       @if (loading()) {
-        <p class="muted">Loading settings…</p>
+        <p class="text-sm text-muted">Loading settings…</p>
       } @else {
-        <section class="settings-layout">
-          <aside class="settings-nav">
-            <button class="active" type="button">Users and roles</button>
-            <button type="button">Publishing</button>
-            <button type="button">Domains</button>
-            <button type="button">Branding</button>
-            <button type="button">Audit log</button>
+        <section class="grid gap-4 lg:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
+          <aside class="h-fit rounded-lg border border-line bg-panel p-2 shadow-panel">
+            <nav class="grid gap-1">
+              <button
+                type="button"
+                class="w-full rounded-lg bg-green-soft px-3 py-2.5 text-left text-sm font-bold text-green"
+              >
+                Users and roles
+              </button>
+              @for (item of ['Publishing', 'Domains', 'Branding', 'Audit log']; track item) {
+                <button
+                  type="button"
+                  class="w-full rounded-lg bg-transparent px-3 py-2.5 text-left text-sm font-bold text-muted transition-colors hover:bg-panel-soft hover:text-ink"
+                >
+                  {{ item }}
+                </button>
+              }
+            </nav>
           </aside>
 
-          <div class="side-stack">
-            <section class="panel">
-              <header class="panel-header">
-                <div>
-                  <h3>Users and access</h3>
-                  <p>Role-based access for {{ organizationName() }}</p>
+          <div class="grid gap-4">
+            <app-panel heading="Users and access" [sub]="'Role-based access for ' + organizationName()">
+              <app-badge panelAction>{{ users().length }} users</app-badge>
+
+              <div class="overflow-hidden rounded-lg border border-line">
+                <div
+                  class="grid grid-cols-[1fr_auto_auto] items-center gap-3 bg-panel-inset px-3 py-2.5 text-[11px] font-black uppercase tracking-wider text-muted"
+                >
+                  <span>User</span><span>Role</span><span>Status</span>
                 </div>
-                <span class="badge">{{ users().length }} users</span>
-              </header>
-              <div class="panel-body">
-                <div class="table">
-                  <div class="table-row table-head">
-                    <span>User</span>
-                    <span>Role</span>
-                    <span>Status</span>
-                  </div>
-                  @for (user of users(); track user.id) {
-                    <div class="table-row">
-                      <div>
-                        <strong>{{ user.displayName }}</strong>
-                        <div class="muted user-email">{{ user.email }}</div>
-                      </div>
-                      <span>{{ user.role }}</span>
-                      <span class="badge badge-good">Active</span>
+                @for (user of users(); track user.id) {
+                  <div
+                    class="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-t border-line px-3 py-2.5 text-sm"
+                  >
+                    <div class="min-w-0">
+                      <strong>{{ user.displayName }}</strong>
+                      <div class="truncate text-[11px] text-muted">{{ user.email }}</div>
                     </div>
-                  }
-                </div>
-
-                <div class="domain-cards">
-                  <article>
-                    <strong>Private URL</strong>
-                    <p>{{ privateUrl() }}</p>
-                    <span class="badge badge-good">Published</span>
-                  </article>
-                  <article>
-                    <strong>Custom domain</strong>
-                    <p>Map your own domain (e.g. maps.your-university.edu) to this workspace.</p>
-                    <span class="badge badge-warn">Not configured</span>
-                  </article>
-                </div>
-              </div>
-            </section>
-
-            <section class="panel">
-              <header class="panel-header">
-                <div>
-                  <h3>Invitations</h3>
-                  <p>Onboard teammates with a shareable invite link</p>
-                </div>
-                <span class="badge">{{ pendingInviteCount() }} pending</span>
-              </header>
-              <div class="panel-body">
-                <form class="invite-form" [formGroup]="inviteForm" (ngSubmit)="createInvite()">
-                  <label>
-                    Role
-                    <select formControlName="role">
-                      <option value="member">Member</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </label>
-                  <label>
-                    Email (optional)
-                    <input type="email" formControlName="email" placeholder="person@example.com" />
-                  </label>
-                  <button class="primary-action" type="submit" [disabled]="creatingInvite()">
-                    {{ creatingInvite() ? 'Creating…' : 'Create invite' }}
-                  </button>
-                </form>
-
-                @if (lastCreatedInvite(); as invite) {
-                  <div class="message success invite-created">
-                    <span>Invite created. Share this link:</span>
-                    <code class="mono">{{ inviteLink(invite) }}</code>
-                    <button type="button" class="secondary-action" (click)="copyLink(invite)">
-                      {{ copiedInviteId() === invite.id ? 'Copied' : 'Copy link' }}
-                    </button>
+                    <span class="capitalize text-muted">{{ user.role }}</span>
+                    <app-badge tone="good">Active</app-badge>
                   </div>
                 }
-
-                @if (invites().length === 0) {
-                  <p class="muted">No invitations yet. Create one to onboard teammates.</p>
-                }
-
-                <div class="card-list">
-                  @for (invite of invites(); track invite.id) {
-                    <article class="compact-card invite-row">
-                      <div>
-                        <div class="status-row">
-                          <span class="badge">{{ invite.role }}</span>
-                          <span class="badge" [class.badge-good]="!invite.usedAt" [class.badge-warn]="!!invite.usedAt">
-                            {{ invite.usedAt ? 'used' : 'pending' }}
-                          </span>
-                        </div>
-                        <p class="muted invite-meta">
-                          {{ invite.email || 'Anyone with the link' }} · expires
-                          {{ invite.expiresAt | date: 'mediumDate' }}
-                        </p>
-                      </div>
-                      @if (!invite.usedAt) {
-                        <button type="button" class="secondary-action" (click)="copyLink(invite)">
-                          {{ copiedInviteId() === invite.id ? 'Copied' : 'Copy' }}
-                        </button>
-                      }
-                    </article>
-                  }
-                </div>
               </div>
-            </section>
+
+              <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                <article class="grid content-start gap-2 rounded-lg border border-line bg-panel p-3.5">
+                  <strong>Private URL</strong>
+                  <p class="break-all text-sm text-muted">{{ privateUrl() }}</p>
+                  <app-badge tone="good">Published</app-badge>
+                </article>
+                <article class="grid content-start gap-2 rounded-lg border border-line bg-panel p-3.5">
+                  <strong>Custom domain</strong>
+                  <p class="text-sm leading-relaxed text-muted">
+                    Map your own domain (e.g. maps.your-university.edu) to this workspace.
+                  </p>
+                  <app-badge tone="warn">Not configured</app-badge>
+                </article>
+              </div>
+            </app-panel>
+
+            <app-panel heading="Invitations" sub="Onboard teammates with a shareable invite link">
+              <app-badge panelAction>{{ pendingInviteCount() }} pending</app-badge>
+
+              <form
+                class="grid gap-3 sm:grid-cols-[140px_1fr_auto] sm:items-end"
+                [formGroup]="inviteForm"
+                (ngSubmit)="createInvite()"
+              >
+                <label>
+                  Role
+                  <select
+                    class="w-full rounded-lg border border-line bg-panel px-3 py-2.5 font-medium text-ink"
+                    formControlName="role"
+                  >
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </label>
+                <label>
+                  Email (optional)
+                  <input type="email" formControlName="email" placeholder="person@example.com" />
+                </label>
+                <button uiBtn type="submit" [disabled]="creatingInvite()">
+                  {{ creatingInvite() ? 'Creating…' : 'Create invite' }}
+                </button>
+              </form>
+
+              @if (lastCreatedInvite(); as invite) {
+                <div class="message success mt-3 flex flex-wrap items-center gap-2">
+                  <span>Invite created. Share this link:</span>
+                  <code class="break-all font-mono text-xs">{{ inviteLink(invite) }}</code>
+                  <button uiBtn="secondary" type="button" (click)="copyLink(invite)">
+                    {{ copiedInviteId() === invite.id ? 'Copied' : 'Copy link' }}
+                  </button>
+                </div>
+              }
+
+              @if (invites().length === 0) {
+                <p class="mt-3 text-sm text-muted">No invitations yet. Create one to onboard teammates.</p>
+              }
+
+              <div class="mt-3 grid gap-2.5">
+                @for (invite of invites(); track invite.id) {
+                  <article
+                    class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-panel p-3"
+                  >
+                    <div class="grid gap-1.5">
+                      <div class="flex flex-wrap gap-2">
+                        <app-badge class="capitalize">{{ invite.role }}</app-badge>
+                        <app-badge [tone]="invite.usedAt ? 'warn' : 'good'">
+                          {{ invite.usedAt ? 'used' : 'pending' }}
+                        </app-badge>
+                      </div>
+                      <p class="break-all text-xs text-muted">
+                        {{ invite.email || 'Anyone with the link' }} · expires
+                        {{ invite.expiresAt | date: 'mediumDate' }}
+                      </p>
+                    </div>
+                    @if (!invite.usedAt) {
+                      <button uiBtn="secondary" type="button" (click)="copyLink(invite)">
+                        {{ copiedInviteId() === invite.id ? 'Copied' : 'Copy' }}
+                      </button>
+                    }
+                  </article>
+                }
+              </div>
+            </app-panel>
           </div>
         </section>
       }
     </div>
   `,
-  styles: `
-    .user-email {
-      font-size: 11px;
-      margin-top: 2px;
-    }
-
-    .invite-form {
-      display: grid;
-      grid-template-columns: 120px 1fr auto;
-      gap: 10px;
-      align-items: end;
-    }
-
-    .invite-created {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .invite-created code,
-    .invite-meta {
-      font-size: 12px;
-      word-break: break-all;
-    }
-
-    .invite-row {
-      align-items: center;
-    }
-
-    @media (max-width: 900px) {
-      .invite-form {
-        grid-template-columns: 1fr;
-      }
-    }
-  `,
+  styles: ``,
 })
 export class AdminSettingsPageComponent {
   private readonly fb = inject(FormBuilder);

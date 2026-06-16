@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { BookableResourceDto, MeetingDto } from '@campus/contracts';
@@ -7,97 +6,86 @@ import { DateTime } from 'luxon';
 import { AuthService } from '../core/auth.service';
 import { MeetingsService } from '../core/meetings.service';
 import { ResourcesService } from '../core/resources.service';
+import {
+  BadgeComponent,
+  ButtonDirective,
+  EmptyStateComponent,
+  MetricComponent,
+  PanelComponent,
+  RouteStepsComponent,
+} from '../ui';
 
 @Component({
   selector: 'app-member-dashboard-page',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [
+    RouterLink,
+    ButtonDirective,
+    PanelComponent,
+    MetricComponent,
+    BadgeComponent,
+    EmptyStateComponent,
+    RouteStepsComponent,
+  ],
   template: `
-    <div class="screen-shell">
+    <div class="grid content-start gap-4">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
 
       @if (loading()) {
-        <p class="muted">Loading your meetings...</p>
+        <p class="text-muted">Loading your meetings…</p>
       } @else {
-        <section class="metrics-grid">
-          <article class="metric">
-            <span>Today</span>
-            <strong>{{ todayCount() }}</strong>
-          </article>
-          <article class="metric">
-            <span>This week</span>
-            <strong>{{ weekCount() }}</strong>
-          </article>
-          <article class="metric">
-            <span>My bookings</span>
-            <strong>{{ myBookingsCount() }}</strong>
-          </article>
-          <article class="metric metric-warn">
-            <span>Next starts in</span>
-            <strong>{{ nextStartsIn() }}</strong>
-          </article>
+        <section class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <app-metric label="Today" [value]="todayCount()" />
+          <app-metric label="This week" [value]="weekCount()" />
+          <app-metric label="My bookings" [value]="myBookingsCount()" />
+          <app-metric label="Next starts in" [value]="nextStartsIn()" tone="warn" />
         </section>
 
-        <section class="two-column">
-          <section class="panel">
-            <header class="panel-header">
-              <div>
-                <h3>My planned meetings</h3>
-                <p>What is planned and where to find it</p>
-              </div>
-              <a class="secondary-action" routerLink="/book">Book a room</a>
-            </header>
-            <div class="panel-body">
-              <div class="card-list">
-                @for (meeting of upcomingMeetings(); track meeting.id; let first = $first) {
-                  <a class="member-meeting-card" [routerLink]="['/bookings', meeting.id]">
-                    <div class="meeting-time" [class.meeting-time-warn]="first">
-                      {{ hourLabel(meeting) }}
-                    </div>
-                    <div>
-                      <h3>{{ meeting.title }}</h3>
-                      <p>{{ locationLabel(meeting) }}</p>
-                      <div class="status-row">
-                        <span class="badge">{{ dayLabel(meeting) }}</span>
-                        <span class="badge" [class.badge-warn]="!isOrganizer(meeting)">
-                          {{ isOrganizer(meeting) ? 'Booked by me' : 'Invited' }}
-                        </span>
-                      </div>
-                    </div>
-                    <span class="secondary-action as-static-action">Details</span>
-                  </a>
-                } @empty {
-                  <div class="inline-form-title">
-                    <strong>No planned meetings yet</strong>
-                    <span>Book your first room to see it appear here.</span>
+        <section class="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,0.55fr)]">
+          <app-panel heading="My planned meetings" sub="What is planned and where to find it">
+            <a panelAction uiBtn="secondary" routerLink="/book">Book a room</a>
+            <div class="grid gap-2.5">
+              @for (meeting of upcomingMeetings(); track meeting.id; let first = $first) {
+                <a
+                  class="grid gap-3 rounded-lg border border-line bg-panel p-3 text-left text-ink transition-colors hover:border-green hover:bg-green-soft/40 focus-visible:border-green focus-visible:outline-none sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center"
+                  [routerLink]="['/bookings', meeting.id]"
+                >
+                  <div
+                    class="min-w-16 rounded-lg px-3 py-2 text-center text-sm font-extrabold"
+                    [class]="first ? 'bg-amber-soft text-amber' : 'bg-green-soft text-green'"
+                  >
+                    {{ hourLabel(meeting) }}
                   </div>
-                  <a class="primary-action" routerLink="/book">Book your first room</a>
-                }
-              </div>
+                  <div class="min-w-0">
+                    <h3 class="text-base font-bold">{{ meeting.title }}</h3>
+                    <p class="my-1 text-sm text-muted">{{ locationLabel(meeting) }}</p>
+                    <div class="flex flex-wrap gap-2">
+                      <app-badge>{{ dayLabel(meeting) }}</app-badge>
+                      <app-badge [tone]="isOrganizer(meeting) ? 'neutral' : 'warn'">
+                        {{ isOrganizer(meeting) ? 'Booked by me' : 'Invited' }}
+                      </app-badge>
+                    </div>
+                  </div>
+                  <span uiBtn="secondary">Details</span>
+                </a>
+              } @empty {
+                <app-empty-state
+                  title="No planned meetings yet"
+                  message="Book your first room to see it appear here."
+                />
+                <a uiBtn routerLink="/book">Book your first room</a>
+              }
             </div>
-          </section>
+          </app-panel>
 
-          <section class="panel">
-            <header class="panel-header">
-              <div>
-                <h3>Next meeting route</h3>
-                <p>{{ nextRouteSubtitle() }}</p>
-              </div>
-            </header>
-            <div class="panel-body">
-              <div class="route-steps">
-                @for (step of nextRouteSteps(); track $index) {
-                  <div class="route-step">
-                    <span>{{ $index + 1 }}</span>
-                    <p>{{ step }}</p>
-                  </div>
-                }
-              </div>
-              <a class="primary-action" routerLink="/map">Open map view</a>
+          <app-panel heading="Next meeting route" [sub]="nextRouteSubtitle()">
+            <div class="grid gap-4">
+              <app-route-steps [steps]="nextRouteSteps()" />
+              <a uiBtn class="justify-self-start" routerLink="/map">Open map view</a>
             </div>
-          </section>
+          </app-panel>
         </section>
       }
     </div>

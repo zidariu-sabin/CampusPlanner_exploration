@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -11,6 +10,13 @@ import {
 
 import { MapboxFootprintPickerComponent } from '../components/mapbox-footprint-picker.component';
 import { CampusesService } from '../core/campuses.service';
+import {
+  ButtonDirective,
+  EmptyStateComponent,
+  PanelComponent,
+  StepStripComponent,
+  type StepItem,
+} from '../ui';
 
 type CampusConfigStep = 'setup' | 'spaces';
 
@@ -26,215 +32,163 @@ const PLACE_TYPE_OPTIONS: Array<{ value: CampusPlaceType; label: string }> = [
 @Component({
   selector: 'app-campus-config-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, MapboxFootprintPickerComponent],
+  imports: [
+    FormsModule,
+    RouterLink,
+    MapboxFootprintPickerComponent,
+    PanelComponent,
+    EmptyStateComponent,
+    ButtonDirective,
+    StepStripComponent,
+  ],
   template: `
-    <div class="screen-shell">
+    <div class="grid content-start gap-4">
       @if (loading()) {
-        <p class="muted">Loading campus...</p>
+        <p class="text-sm text-muted">Loading campus…</p>
       } @else if (!campus()) {
         <p class="message error">{{ error() || 'Campus not found.' }}</p>
       } @else {
-        <section class="step-strip">
-          <button type="button" [class.active]="step() === 'setup'" (click)="step.set('setup')">
-            <span>1</span>
-            <strong>Campus setup</strong>
-            <small>Set the campus name, timezone, and footprint boundary on the map.</small>
-          </button>
-          <button type="button" [class.active]="step() === 'spaces'" (click)="step.set('spaces')">
-            <span>2</span>
-            <strong>Define spaces</strong>
-            <small>Add buildings and outdoor resources inside the campus boundary.</small>
-          </button>
-        </section>
+        <app-step-strip
+          [steps]="steps"
+          [active]="step() === 'setup' ? 0 : 1"
+          (select)="step.set($event === 0 ? 'setup' : 'spaces')"
+        />
 
         @if (message()) {
           <p class="message success">{{ message() }}</p>
         }
-
         @if (error()) {
           <p class="message error">{{ error() }}</p>
         }
 
         @if (step() === 'setup') {
-          <section class="map-layout">
-            <section class="panel">
-              <header class="panel-header">
-                <div>
-                  <h3>Campus boundary</h3>
-                  <p>Draw or adjust the campus outline on the satellite map</p>
-                </div>
-              </header>
-              <div class="panel-body">
-                <app-mapbox-footprint-picker
-                  [footprint]="campusBoundary()"
-                  (footprintChange)="campusBoundary.set($event)"
-                />
-              </div>
-            </section>
+          <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_clamp(320px,32%,380px)] lg:items-start">
+            <app-panel heading="Campus boundary" sub="Draw or adjust the campus outline on the satellite map">
+              <app-mapbox-footprint-picker
+                [footprint]="campusBoundary()"
+                (footprintChange)="campusBoundary.set($event)"
+              />
+            </app-panel>
 
-            <section class="panel">
-              <header class="panel-header">
-                <div>
-                  <h3>Campus definition</h3>
-                  <p>Name and timezone apply to every space and booking</p>
-                </div>
-                <button class="secondary-action" type="button" (click)="saveCampus()" [disabled]="savingCampus()">
-                  {{ savingCampus() ? 'Saving...' : 'Save' }}
-                </button>
-              </header>
-              <div class="panel-body">
-                <div class="form-stack">
-                  <label>Campus name <input [(ngModel)]="campusName" /></label>
-                  <label>Timezone <input [(ngModel)]="campusTimezone" placeholder="Europe/Bucharest" /></label>
-                  <div class="inline-form-title">
-                    <strong>Footprint</strong>
-                    <span>
-                      The boundary drawn on the map is saved with these details. Spaces you define
-                      next must stay inside this boundary.
-                    </span>
-                  </div>
-                  <button class="primary-action" type="button" (click)="step.set('spaces')">
-                    Continue to define spaces
-                  </button>
-                </div>
+            <app-panel heading="Campus definition" sub="Name and timezone apply to every space and booking">
+              <button panelAction uiBtn="secondary" type="button" (click)="saveCampus()" [disabled]="savingCampus()">
+                {{ savingCampus() ? 'Saving…' : 'Save' }}
+              </button>
+              <div class="grid gap-3">
+                <label>Campus name <input [(ngModel)]="campusName" /></label>
+                <label>Timezone <input [(ngModel)]="campusTimezone" placeholder="Europe/Bucharest" /></label>
+                <app-empty-state
+                  title="Footprint"
+                  message="The boundary drawn on the map is saved with these details. Spaces you define next must stay inside this boundary."
+                />
+                <button uiBtn type="button" (click)="step.set('spaces')">Continue to define spaces</button>
               </div>
-            </section>
+            </app-panel>
           </section>
         } @else {
-          <section class="map-layout side-first">
-            <div class="side-stack">
-              <section class="panel">
-                <header class="panel-header">
-                  <div>
-                    <h3>{{ editingPlaceId() ? 'Edit space' : 'New space' }}</h3>
-                    <p>Footprints must stay inside the campus boundary</p>
-                  </div>
-                  <button class="secondary-action" type="button" (click)="savePlace()" [disabled]="savingPlace()">
-                    {{ savingPlace() ? 'Saving...' : editingPlaceId() ? 'Save space' : 'Create space' }}
-                  </button>
-                </header>
-                <div class="panel-body">
-                  <div class="form-stack">
-                    <label>Name <input [(ngModel)]="placeName" /></label>
-                    <label>
-                      Type
-                      <select [ngModel]="placeType()" (ngModelChange)="setPlaceType($event)">
-                        @for (option of placeTypeOptions; track option.value) {
-                          <option [value]="option.value">{{ option.label }}</option>
-                        }
-                      </select>
+          <section class="grid gap-4 lg:grid-cols-[clamp(300px,32%,360px)_minmax(0,1fr)] lg:items-start">
+            <div class="grid gap-4">
+              <app-panel
+                [heading]="editingPlaceId() ? 'Edit space' : 'New space'"
+                sub="Footprints must stay inside the campus boundary"
+              >
+                <button panelAction uiBtn="secondary" type="button" (click)="savePlace()" [disabled]="savingPlace()">
+                  {{ savingPlace() ? 'Saving…' : editingPlaceId() ? 'Save space' : 'Create space' }}
+                </button>
+                <div class="grid gap-3">
+                  <label>Name <input [(ngModel)]="placeName" /></label>
+                  <label>
+                    Type
+                    <select
+                      class="w-full rounded-lg border border-line bg-panel px-3 py-2.5 font-medium text-ink"
+                      [ngModel]="placeType()"
+                      (ngModelChange)="setPlaceType($event)"
+                    >
+                      @for (option of placeTypeOptions; track option.value) {
+                        <option [value]="option.value">{{ option.label }}</option>
+                      }
+                    </select>
+                  </label>
+                  @if (placeType() !== 'building') {
+                    <label class="flex items-center justify-between gap-2.5">
+                      <span>Bookable by members</span>
+                      <input type="checkbox" class="h-4 w-4 accent-strong" [(ngModel)]="placeBookable" />
                     </label>
-                    @if (placeType() !== 'building') {
-                      <label class="check-option">
-                        <span>Bookable by members</span>
-                        <input type="checkbox" [(ngModel)]="placeBookable" />
-                      </label>
-                    } @else {
-                      <p class="muted">Buildings are not directly bookable — rooms inside their floors are.</p>
-                    }
-                    @if (editingPlaceId()) {
-                      <button class="secondary-action" type="button" (click)="startNewPlace()">Cancel edit</button>
-                    }
-                  </div>
-                </div>
-              </section>
-
-              <section class="panel">
-                <header class="panel-header">
-                  <div>
-                    <h3>Campus spaces</h3>
-                    <p>Other spaces in this campus</p>
-                  </div>
-                  <button class="secondary-action" type="button" (click)="startNewPlace()">New space</button>
-                </header>
-                <div class="panel-body">
-                  @if (campus()!.places.length === 0) {
-                    <p class="muted">No spaces yet. Create the first building or outdoor space.</p>
+                  } @else {
+                    <p class="text-sm text-muted">
+                      Buildings are not directly bookable — rooms inside their floors are.
+                    </p>
                   }
-                  <div class="card-list">
-                    @for (place of campus()!.places; track place.id) {
-                      <article class="compact-card place-item" [class.is-selected]="editingPlaceId() === place.id">
-                        <div>
-                          <h3>{{ place.name }}</h3>
-                          <p>
-                            {{ placeTypeLabel(place.type) }}
-                            @if (place.type === 'building') {
-                              · {{ place.floorCount }} floors
-                            } @else if (place.bookable) {
-                              · Bookable
-                            }
-                          </p>
-                          <div class="status-row place-actions">
-                            <button type="button" class="secondary-action" (click)="startEditPlace(place)">Edit</button>
-                            @if (place.type === 'building') {
-                              <a
-                                class="secondary-action"
-                                routerLink="/admin/spaces"
-                                [queryParams]="{ campusId: campus()!.id, placeId: place.id }"
-                              >
-                                Floors &amp; rooms
-                              </a>
-                            }
-                            <button type="button" class="danger" (click)="deletePlace(place)">Delete</button>
-                          </div>
-                        </div>
-                      </article>
-                    }
-                  </div>
+                  @if (editingPlaceId()) {
+                    <button uiBtn="secondary" type="button" (click)="startNewPlace()">Cancel edit</button>
+                  }
                 </div>
-              </section>
+              </app-panel>
+
+              <app-panel heading="Campus spaces" sub="Other spaces in this campus">
+                <button panelAction uiBtn="secondary" type="button" (click)="startNewPlace()">New space</button>
+                @if (campus()!.places.length === 0) {
+                  <p class="text-sm text-muted">No spaces yet. Create the first building or outdoor space.</p>
+                }
+                <div class="grid gap-2.5">
+                  @for (place of campus()!.places; track place.id) {
+                    <article
+                      class="rounded-lg border p-3"
+                      [class]="editingPlaceId() === place.id ? 'border-green bg-green-soft' : 'border-line bg-panel'"
+                    >
+                      <h3 class="text-base font-bold">{{ place.name }}</h3>
+                      <p class="text-sm text-muted">
+                        {{ placeTypeLabel(place.type) }}@if (place.type === 'building') {
+                          · {{ place.floorCount }} floors
+                        } @else if (place.bookable) {
+                          · Bookable
+                        }
+                      </p>
+                      <div class="mt-2.5 flex flex-wrap gap-2">
+                        <button uiBtn="secondary" type="button" (click)="startEditPlace(place)">Edit</button>
+                        @if (place.type === 'building') {
+                          <a
+                            uiBtn="secondary"
+                            routerLink="/admin/spaces"
+                            [queryParams]="{ campusId: campus()!.id, placeId: place.id }"
+                          >
+                            Floors &amp; rooms
+                          </a>
+                        }
+                        <button uiBtn="danger" type="button" (click)="deletePlace(place)">Delete</button>
+                      </div>
+                    </article>
+                  }
+                </div>
+              </app-panel>
             </div>
 
-            <section class="panel">
-              <header class="panel-header">
-                <div>
-                  <h3>Space localization</h3>
-                  <p>Drag the footprint to position it inside the campus boundary</p>
-                </div>
-              </header>
-              <div class="panel-body">
-                <app-mapbox-footprint-picker
-                  [footprint]="placeFootprint()"
-                  [referenceFootprint]="campusBoundary()"
-                  [selectableFootprints]="otherSpaces()"
-                  (footprintChange)="placeFootprint.set($event)"
-                  (footprintSelected)="onMapSpaceSelected($event)"
-                />
-              </div>
-            </section>
+            <app-panel heading="Space localization" sub="Drag the footprint to position it inside the campus boundary">
+              <app-mapbox-footprint-picker
+                [footprint]="placeFootprint()"
+                [referenceFootprint]="campusBoundary()"
+                [selectableFootprints]="otherSpaces()"
+                (footprintChange)="placeFootprint.set($event)"
+                (footprintSelected)="onMapSpaceSelected($event)"
+              />
+            </app-panel>
           </section>
         }
       }
     </div>
   `,
-  styles: `
-    .place-item.is-selected {
-      border-color: var(--green);
-      background: var(--green-soft);
-    }
-
-    .place-item h3 {
-      font-size: 15px;
-    }
-
-    .place-actions {
-      margin-top: 10px;
-    }
-
-    .check-option {
-      display: flex;
-      flex-direction: row;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-    }
-  `,
+  styles: ``,
 })
 export class CampusConfigPageComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly campusesService = inject(CampusesService);
 
   protected readonly placeTypeOptions = PLACE_TYPE_OPTIONS;
+
+  protected readonly steps: StepItem[] = [
+    { title: 'Campus setup', detail: 'Set the campus name, timezone, and footprint boundary on the map.' },
+    { title: 'Define spaces', detail: 'Add buildings and outdoor resources inside the campus boundary.' },
+  ];
 
   protected readonly campus = signal<CampusDto | null>(null);
   protected readonly loading = signal(true);

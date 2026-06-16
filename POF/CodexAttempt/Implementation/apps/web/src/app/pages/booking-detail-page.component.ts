@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { BookableResourceDto, FloorMapDto, MeetingDto } from '@campus/contracts';
@@ -9,110 +8,94 @@ import { AuthService } from '../core/auth.service';
 import { MapsService } from '../core/maps.service';
 import { MeetingsService } from '../core/meetings.service';
 import { ResourcesService } from '../core/resources.service';
+import { BadgeComponent, ButtonDirective, PanelComponent, RouteStepsComponent } from '../ui';
 
 @Component({
   selector: 'app-booking-detail-page',
   standalone: true,
-  imports: [CommonModule, RouterLink, MapPreviewComponent],
+  imports: [
+    RouterLink,
+    MapPreviewComponent,
+    PanelComponent,
+    BadgeComponent,
+    RouteStepsComponent,
+    ButtonDirective,
+  ],
   template: `
-    <div class="screen-shell">
+    <div class="grid content-start gap-4">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
 
       @if (loading()) {
-        <p class="muted">Loading booking...</p>
+        <p class="text-sm text-muted">Loading booking…</p>
       } @else if (meeting(); as meeting) {
-        <section class="map-layout">
-          <section class="panel">
-            <header class="panel-header">
-              <div>
-                <h3>Room location</h3>
-                <p>{{ resource()?.campusName || 'Indoor route preview' }}</p>
-              </div>
-            </header>
-            <div class="panel-body">
-              @if (floorMap(); as map) {
-                <app-map-preview [map]="map" [compact]="true" [selectedRoomId]="meeting.roomId" />
-              } @else if (loadingMap()) {
-                <p class="muted">Loading floor map...</p>
-              } @else {
-                <p class="muted">No indoor map is available for this booking.</p>
-              }
-            </div>
-          </section>
+        <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_clamp(320px,34%,400px)] lg:items-start">
+          <app-panel heading="Room location" [sub]="resource()?.campusName || 'Indoor route preview'">
+            @if (floorMap(); as map) {
+              <app-map-preview [map]="map" [compact]="true" [selectedRoomId]="meeting.roomId" />
+            } @else if (loadingMap()) {
+              <p class="text-sm text-muted">Loading floor map…</p>
+            } @else {
+              <p class="text-sm text-muted">No indoor map is available for this booking.</p>
+            }
+          </app-panel>
 
-          <section class="panel">
-            <header class="panel-header">
-              <div>
-                <h3>{{ meeting.title }}</h3>
-                <p>{{ localTimeLabel() }}</p>
-              </div>
-            </header>
-            <div class="panel-body">
-              <div class="booking-summary">
-                <span class="badge badge-good">Confirmed</span>
-                <span class="badge">{{ resource()?.name || 'Unknown location' }}</span>
+          <app-panel [heading]="meeting.title" [sub]="localTimeLabel()">
+            <div class="grid gap-3">
+              <div class="flex flex-wrap gap-2">
+                <app-badge tone="good">Confirmed</app-badge>
+                <app-badge>{{ resource()?.name || 'Unknown location' }}</app-badge>
                 @if (resource()?.floorLabel) {
-                  <span class="badge">{{ resource()!.floorLabel }}</span>
+                  <app-badge>{{ resource()!.floorLabel }}</app-badge>
                 }
               </div>
 
-              <div class="booking-detail-card">
-                <div><span>Campus</span><strong>{{ resource()?.campusName || '—' }}</strong></div>
-                <div>
-                  <span>Space</span>
+              <div class="grid gap-2.5 rounded-lg border border-line bg-panel p-3 text-sm">
+                <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                  <span class="font-semibold text-muted">Campus</span><strong>{{ resource()?.campusName || '—' }}</strong>
+                </div>
+                <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                  <span class="font-semibold text-muted">Space</span>
                   <strong>{{ resource()?.campusPlaceName || resource()?.name || '—' }}</strong>
                 </div>
-                <div><span>Floor</span><strong>{{ resource()?.floorLabel || '—' }}</strong></div>
-                <div><span>Room</span><strong>{{ resource()?.name || '—' }}</strong></div>
-                <div><span>Organizer</span><strong>{{ meeting.createdBy.displayName }}</strong></div>
-                <div><span>Guests</span><strong>{{ guestNames(meeting) }}</strong></div>
+                <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                  <span class="font-semibold text-muted">Floor</span><strong>{{ resource()?.floorLabel || '—' }}</strong>
+                </div>
+                <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                  <span class="font-semibold text-muted">Room</span><strong>{{ resource()?.name || '—' }}</strong>
+                </div>
+                <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                  <span class="font-semibold text-muted">Organizer</span><strong>{{ meeting.createdBy.displayName }}</strong>
+                </div>
+                <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                  <span class="font-semibold text-muted">Guests</span><strong>{{ guestNames(meeting) }}</strong>
+                </div>
               </div>
 
               @if (meeting.description) {
-                <p class="muted">{{ meeting.description }}</p>
+                <p class="text-sm text-muted">{{ meeting.description }}</p>
               }
 
-              <div class="route-steps">
-                @for (step of routeSteps(); track $index) {
-                  <div class="route-step">
-                    <span>{{ $index + 1 }}</span>
-                    <p>{{ step }}</p>
-                  </div>
-                }
-              </div>
+              <app-route-steps [steps]="routeSteps()" />
 
-              <button class="primary-action" type="button" disabled>Start navigation</button>
+              <button uiBtn class="w-full" type="button" disabled>Start navigation</button>
 
-              <div class="detail-actions">
-                <a class="secondary-action" routerLink="/">Back to dashboard</a>
+              <div class="flex flex-wrap items-center gap-2">
+                <a uiBtn="secondary" routerLink="/">Back to dashboard</a>
                 @if (canCancel()) {
-                  <button
-                    type="button"
-                    class="danger"
-                    [disabled]="cancelling()"
-                    (click)="cancelBooking()"
-                  >
-                    {{ cancelling() ? 'Cancelling...' : 'Cancel booking' }}
+                  <button uiBtn="danger" type="button" [disabled]="cancelling()" (click)="cancelBooking()">
+                    {{ cancelling() ? 'Cancelling…' : 'Cancel booking' }}
                   </button>
                 }
               </div>
             </div>
-          </section>
+          </app-panel>
         </section>
       }
     </div>
   `,
-  styles: `
-    .detail-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-top: 4px;
-    }
-  `,
+  styles: ``,
 })
 export class BookingDetailPageComponent {
   private readonly route = inject(ActivatedRoute);

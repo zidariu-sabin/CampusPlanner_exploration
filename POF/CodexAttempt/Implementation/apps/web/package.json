@@ -42,7 +42,9 @@
     "@angular/build": "^20.3.23",
     "@angular/cli": "^20.3.23",
     "@angular/compiler-cli": "^20.3.0",
+    "@tailwindcss/postcss": "^4.3.1",
     "@types/mapbox__mapbox-gl-draw": "^1.4.9",
+    "tailwindcss": "^4.3.1",
     "typescript": "~5.9.2"
   }
 }

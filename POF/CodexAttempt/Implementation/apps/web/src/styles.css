@@ -1,6 +1,61 @@
+@layer theme, base, components, utilities;
+
 @import 'mapbox-gl/dist/mapbox-gl.css';
 @import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&display=swap');
+
+/* Tailwind v4 — theme tokens + utilities only. Preflight (the base reset) is
+ * intentionally NOT imported so the hand-authored base styles below remain
+ * authoritative and no existing component shifts. Migration is page-by-page:
+ * Tailwind utilities are added as templates are rewritten, never in bulk. */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* Inline templates live in component .ts files — scan them explicitly. */
+@source './app/**/*.{ts,html}';
+@source './index.html';
+
+/*
+ * Token bridge: mirror the :root design tokens into the Tailwind theme so
+ * semantic utilities exist (bg-strong, text-muted, border-line, shadow-panel,
+ * font-mono, …). The legacy :root vars below are the runtime source the map /
+ * editor components read via var(--strong) etc. — KEEP THE TWO IN SYNC.
+ */
+@theme {
+  --color-bg: #eef2f3;
+  --color-panel: #ffffff;
+  --color-panel-soft: #f6f8f8;
+  --color-panel-muted: #fbfcfc;
+  --color-panel-inset: #f8faf9;
+  --color-ink: #172026;
+  --color-muted: #6c7a82;
+  --color-line: #dbe3e6;
+  --color-strong: #0f3d3e;
+  --color-strong-2: #14585a;
+  --color-green: #0f766e;
+  --color-green-soft: #e7f7f3;
+  --color-amber: #d97706;
+  --color-amber-soft: #fff7e8;
+  --color-blue: #2563eb;
+  --color-blue-soft: #dbeafe;
+  --color-red: #b42318;
+  --color-red-soft: #fee2e2;
+
+  --shadow-panel: 0 18px 55px rgba(20, 31, 36, 0.1);
+  --shadow-float: 0 8px 30px rgba(20, 31, 36, 0.09);
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+}
+
+/* Anchor reset (preflight is omitted): every link in this app is a card,
+ * button, or nav item — never underlined prose. In the base layer so any
+ * utility (e.g. `underline`) still wins where intentionally needed. */
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
 
 /*
  * Global design system ported from the Campus Planner design mockup
@@ -426,7 +481,10 @@ router-outlet {
 }
 
 /* ---- Buttons ------------------------------------------------------------ */
-
+/* Wrapped in @layer components so Tailwind utilities (the `uiBtn` directive)
+ * win on migrated buttons, while bare <button>s on not-yet-migrated pages and
+ * the map-editor toolbars keep this legacy default styling. */
+@layer components {
 button,
 .button,
 .primary-action {
@@ -475,6 +533,7 @@ button.danger,
   border-color: var(--red);
   background: var(--red);
   color: #fff;
+}
 }
 
 /* ---- Cards & lists ------------------------------------------------------ */
@@ -1236,7 +1295,10 @@ svg text {
 }
 
 /* ---- Forms -------------------------------------------------------------- */
-
+/* Wrapped in @layer components so field-level utilities (custom padding for an
+   icon inside an input, flex label layouts, transparent backgrounds) win over
+   these element defaults, while bare fields still pick them up. */
+@layer components {
 label {
   display: grid;
   gap: 6px;
@@ -1269,6 +1331,7 @@ input[type='range'] {
 textarea {
   min-height: 86px;
   resize: vertical;
+}
 }
 
 .geojson-input {

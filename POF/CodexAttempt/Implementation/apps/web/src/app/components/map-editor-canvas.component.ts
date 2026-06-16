@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, ElementRef, HostListener, ViewChild, input, output } from '@angular/core';
+import { Component, ElementRef, HostListener, ViewChild, input, output, signal } from '@angular/core';
 import {
   EditorRoomModel,
   GeoJsonPolygon,
@@ -101,7 +101,7 @@ type InteractionState =
   imports: [CommonModule],
   template: `
     @if (footprint()) {
-      <svg #svgCanvas class="editor-svg" [attr.viewBox]="viewBox()">
+      <svg #svgCanvas class="editor-svg" [attr.viewBox]="viewBox()" (wheel)="onWheel($event)">
         <defs>
           <clipPath [attr.id]="backgroundClipPathId">
             <polygon [attr.points]="footprintPoints()" />
@@ -307,6 +307,12 @@ type InteractionState =
           </g>
         }
       </svg>
+      <div class="zoom-ctl">
+        <button type="button" (click)="zoomIn()" [disabled]="zoomLevel() >= maxZoom" aria-label="Zoom in" title="Zoom in">+</button>
+        <span class="zoom-pct">{{ zoomPercent() }}%</span>
+        <button type="button" (click)="zoomOut()" [disabled]="zoomLevel() <= minZoom" aria-label="Zoom out" title="Zoom out">&minus;</button>
+        <button type="button" (click)="resetZoom()" [disabled]="zoomLevel() === 1" aria-label="Reset to fit" title="Reset to fit">&#8862;</button>
+      </div>
     } @else {
       <p class="message error">
         The footprint GeoJSON must be a valid Polygon before rooms can be edited.
@@ -317,7 +323,6 @@ type InteractionState =
     .editor-svg {
       width: 100%;
       height: 100%;
-      min-height: 420px;
       border-radius: 22px;
       background:
         linear-gradient(90deg, rgba(31, 42, 51, 0.04) 1px, transparent 1px),
@@ -325,6 +330,61 @@ type InteractionState =
       background-size: 20px 20px;
       box-shadow: inset 0 0 0 1px rgba(31, 42, 51, 0.08);
       touch-action: none;
+    }
+
+    /* The SVG renders directly in the host (no wrapper) so it keeps its original
+       content-sizing and the surrounding panel grows to fit it (no clipping).
+       The host just provides the positioning context for the zoom overlay. */
+    :host {
+      position: relative;
+      display: block;
+    }
+
+    .zoom-ctl {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 8px 24px rgba(20, 31, 36, 0.12);
+    }
+
+    .zoom-ctl button {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--strong);
+      font-size: 16px;
+      font-weight: 900;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .zoom-ctl button:hover {
+      background: var(--panel-soft);
+    }
+
+    .zoom-ctl button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .zoom-pct {
+      min-width: 42px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--muted);
     }
 
     .footprint {
@@ -483,11 +543,108 @@ export class MapEditorCanvasComponent {
       : { minX: 0, minY: 0, maxX: 100, maxY: 100, width: 100, height: 100 };
   }
 
-  protected viewBox(): string {
+  // ----- Zoom / pan -------------------------------------------------------
+  // Zoom is driven entirely through the SVG viewBox. Because pointer→SVG
+  // conversion (toSvgPoint) goes through getScreenCTM(), every existing
+  // interaction (drag/resize/rotate/crop/draw) keeps working at any zoom with
+  // no extra math. zoomLevel 1 = the padded "fit" view; pan is an SVG-unit
+  // offset of the view centre, clamped to keep the window inside the fit extent.
+  protected readonly maxZoom = 8;
+  protected readonly minZoom = 0.4;
+  protected readonly zoomLevel = signal(1);
+  protected readonly pan = signal<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  /** The padded "fit" view of the footprint, before zoom/pan is applied. */
+  private fullView(): { minX: number; minY: number; width: number; height: number } {
     const box = this.bounds();
     const padX = Math.max(box.width * 0.08, 24);
     const padY = Math.max(box.height * 0.08, 24);
-    return `${box.minX - padX} ${box.minY - padY} ${box.width + padX * 2} ${box.height + padY * 2}`;
+    return {
+      minX: box.minX - padX,
+      minY: box.minY - padY,
+      width: box.width + padX * 2,
+      height: box.height + padY * 2,
+    };
+  }
+
+  protected viewBox(): string {
+    const full = this.fullView();
+    const z = this.zoomLevel();
+    const w = full.width / z;
+    const h = full.height / z;
+    // Clamp pan at render time so the zoomed window never leaves the fit extent,
+    // even after the footprint (and therefore bounds) changes underneath us.
+    const maxPanX = Math.max(0, (full.width - w) / 2);
+    const maxPanY = Math.max(0, (full.height - h) / 2);
+    const px = clampNumber(this.pan().x, -maxPanX, maxPanX);
+    const py = clampNumber(this.pan().y, -maxPanY, maxPanY);
+    const cx = full.minX + full.width / 2 + px;
+    const cy = full.minY + full.height / 2 + py;
+    return `${cx - w / 2} ${cy - h / 2} ${w} ${h}`;
+  }
+
+  protected zoomPercent(): number {
+    return Math.round(this.zoomLevel() * 100);
+  }
+
+  protected zoomIn(): void {
+    this.applyZoom(this.zoomLevel() * 1.3);
+  }
+
+  protected zoomOut(): void {
+    this.applyZoom(this.zoomLevel() / 1.3);
+  }
+
+  protected resetZoom(): void {
+    this.zoomLevel.set(1);
+    this.pan.set({ x: 0, y: 0 });
+  }
+
+  private applyZoom(z: number): void {
+    this.zoomLevel.set(clampNumber(z, this.minZoom, this.maxZoom));
+    this.clampPan();
+  }
+
+  /** Wheel zoom anchored to the cursor, so the point under it stays put. */
+  protected onWheel(event: WheelEvent): void {
+    event.preventDefault();
+    const oldZoom = this.zoomLevel();
+    const newZoom = clampNumber(oldZoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15), this.minZoom, this.maxZoom);
+    if (newZoom === oldZoom) {
+      return;
+    }
+
+    const focus = this.clientToSvg(event.clientX, event.clientY);
+    const full = this.fullView();
+    if (focus) {
+      const oldW = full.width / oldZoom;
+      const oldH = full.height / oldZoom;
+      const oldCx = full.minX + full.width / 2 + this.pan().x;
+      const oldCy = full.minY + full.height / 2 + this.pan().y;
+      const fx = oldW === 0 ? 0.5 : (focus.x - (oldCx - oldW / 2)) / oldW;
+      const fy = oldH === 0 ? 0.5 : (focus.y - (oldCy - oldH / 2)) / oldH;
+      const newW = full.width / newZoom;
+      const newH = full.height / newZoom;
+      const newCx = focus.x + newW * (0.5 - fx);
+      const newCy = focus.y + newH * (0.5 - fy);
+      this.zoomLevel.set(newZoom);
+      this.pan.set({
+        x: newCx - (full.minX + full.width / 2),
+        y: newCy - (full.minY + full.height / 2),
+      });
+    } else {
+      this.zoomLevel.set(newZoom);
+    }
+    this.clampPan();
+  }
+
+  private clampPan(): void {
+    const full = this.fullView();
+    const z = this.zoomLevel();
+    const maxX = Math.max(0, (full.width - full.width / z) / 2);
+    const maxY = Math.max(0, (full.height - full.height / z) / 2);
+    const p = this.pan();
+    this.pan.set({ x: clampNumber(p.x, -maxX, maxX), y: clampNumber(p.y, -maxY, maxY) });
   }
 
   protected footprintPoints(): string {
@@ -1022,14 +1179,18 @@ export class MapEditorCanvasComponent {
   }
 
   private toSvgPoint(event: PointerEvent): { x: number; y: number } | null {
+    return this.clientToSvg(event.clientX, event.clientY);
+  }
+
+  private clientToSvg(clientX: number, clientY: number): { x: number; y: number } | null {
     const svg = this.svgCanvas?.nativeElement;
     if (!svg) {
       return null;
     }
 
     const point = svg.createSVGPoint();
-    point.x = event.clientX;
-    point.y = event.clientY;
+    point.x = clientX;
+    point.y = clientY;
     const matrix = svg.getScreenCTM();
 
     if (!matrix) {
@@ -1039,6 +1200,10 @@ export class MapEditorCanvasComponent {
     const transformed = point.matrixTransform(matrix.inverse());
     return { x: transformed.x, y: transformed.y };
   }
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function translatePolygon(polygon: GeoJsonPolygon, deltaX: number, deltaY: number): GeoJsonPolygon {

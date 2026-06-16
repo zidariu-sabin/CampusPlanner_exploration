@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -15,6 +14,14 @@ import { MemberMapboxViewComponent } from '../components/member-mapbox-view.comp
 import { CampusesService } from '../core/campuses.service';
 import { FloorsService } from '../core/floors.service';
 import { MapsService } from '../core/maps.service';
+import {
+  BadgeComponent,
+  ButtonDirective,
+  PanelComponent,
+  RouteStepsComponent,
+  StepStripComponent,
+  type StepItem,
+} from '../ui';
 
 type SpaceConfigPanel = 'select' | 'align' | 'rooms' | 'review';
 
@@ -22,55 +29,23 @@ type SpaceConfigPanel = 'select' | 'align' | 'rooms' | 'review';
   selector: 'app-space-config-page',
   standalone: true,
   imports: [
-    CommonModule,
     FormsModule,
     RouterLink,
     MemberMapboxViewComponent,
     MapEditorFormComponent,
+    PanelComponent,
+    BadgeComponent,
+    ButtonDirective,
+    RouteStepsComponent,
+    StepStripComponent,
   ],
   template: `
-    <div class="screen-shell">
+    <div class="grid content-start gap-4">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
 
-      <section class="step-strip">
-        <button type="button" [class.active]="panel() === 'select'" (click)="showSelect()">
-          <span>1</span>
-          <strong>Select space</strong>
-          <small>Choose the campus, building, and floor that will receive the plan.</small>
-        </button>
-        <button
-          type="button"
-          [class.active]="panel() === 'align'"
-          [disabled]="!selectedFloor() && !creatingFloor()"
-          (click)="panel.set('align')"
-        >
-          <span>2</span>
-          <strong>Upload &amp; align</strong>
-          <small>Upload the floor image, then scale and rotate it over the footprint.</small>
-        </button>
-        <button
-          type="button"
-          [class.active]="panel() === 'rooms'"
-          [disabled]="!selectedFloor()"
-          (click)="showRooms()"
-        >
-          <span>3</span>
-          <strong>Configure rooms</strong>
-          <small>Define rooms and labels on top of the aligned floor image.</small>
-        </button>
-        <button
-          type="button"
-          [class.active]="panel() === 'review'"
-          [disabled]="!selectedFloor()"
-          (click)="panel.set('review')"
-        >
-          <span>4</span>
-          <strong>Review &amp; publish</strong>
-          <small>Resolve warnings and make the space available to members.</small>
-        </button>
-      </section>
+      <app-step-strip [steps]="steps()" [active]="activeStep()" (select)="onStep($event)" />
 
       @if (panel() === 'align' && (selectedFloor() || creatingFloor())) {
         <app-map-editor-form
@@ -91,24 +66,18 @@ type SpaceConfigPanel = 'select' | 'align' | 'rooms' | 'review';
           (floorSaved)="onFloorSaved($event)"
         />
       } @else {
-      <section class="map-layout">
-        <section class="panel canvas">
-          <header class="panel-header">
-            <div>
-              <h3>{{ canvasTitle() }}</h3>
-              <p>{{ canvasSubtitle() }}</p>
-            </div>
+        <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_clamp(320px,32%,380px)] lg:items-start">
+          <app-panel [heading]="canvasTitle()" [sub]="canvasSubtitle()">
             @if (selectedFloor(); as floor) {
-              <span class="badge" [class.badge-good]="floor.roomCount > 0" [class.badge-warn]="floor.roomCount === 0">
+              <app-badge panelAction [tone]="floor.roomCount > 0 ? 'good' : 'warn'">
                 {{ floor.roomCount }} rooms
-              </span>
+              </app-badge>
             } @else if (campus()) {
-              <span class="badge badge-good">{{ buildingPlaces().length }} buildings</span>
+              <app-badge panelAction tone="good">{{ buildingPlaces().length }} buildings</app-badge>
             } @else {
-              <span class="badge">{{ campuses().length }} campuses</span>
+              <app-badge panelAction>{{ campuses().length }} campuses</app-badge>
             }
-          </header>
-          <div class="panel-body">
+
             <app-member-mapbox-view
               [campuses]="campuses()"
               [selectedCampus]="campus()"
@@ -118,22 +87,18 @@ type SpaceConfigPanel = 'select' | 'align' | 'rooms' | 'review';
               (campusSelected)="selectCampus($event)"
               (placeSelected)="selectPlace($event)"
             />
-          </div>
-        </section>
+          </app-panel>
 
-        <div class="side-stack">
-          <section class="panel">
-            <header class="panel-header">
-              <div>
-                <h3>Select space</h3>
-                <p>Campus → building → floor</p>
-              </div>
-            </header>
-            <div class="panel-body">
-              <div class="form-stack">
+          <div class="grid gap-4">
+            <app-panel heading="Select space" sub="Campus → building → floor">
+              <div class="grid gap-3">
                 <label>
                   Campus
-                  <select [ngModel]="selectedCampusId() ?? ''" (ngModelChange)="selectCampus($event || null)">
+                  <select
+                    class="w-full rounded-lg border border-line bg-panel px-3 py-2.5 font-medium text-ink disabled:opacity-60"
+                    [ngModel]="selectedCampusId() ?? ''"
+                    (ngModelChange)="selectCampus($event || null)"
+                  >
                     <option value="">Select a campus</option>
                     @for (campus of campuses(); track campus.id) {
                       <option [value]="campus.id">{{ campus.name }}</option>
@@ -144,6 +109,7 @@ type SpaceConfigPanel = 'select' | 'align' | 'rooms' | 'review';
                 <label>
                   Building
                   <select
+                    class="w-full rounded-lg border border-line bg-panel px-3 py-2.5 font-medium text-ink disabled:opacity-60"
                     [ngModel]="selectedPlaceId() ?? ''"
                     (ngModelChange)="selectPlace($event || null)"
                     [disabled]="!campus()"
@@ -158,6 +124,7 @@ type SpaceConfigPanel = 'select' | 'align' | 'rooms' | 'review';
                 <label>
                   Floor
                   <select
+                    class="w-full rounded-lg border border-line bg-panel px-3 py-2.5 font-medium text-ink disabled:opacity-60"
                     [ngModel]="selectedFloorId() ?? ''"
                     (ngModelChange)="selectFloor($event || null)"
                     [disabled]="!selectedPlace()"
@@ -170,97 +137,75 @@ type SpaceConfigPanel = 'select' | 'align' | 'rooms' | 'review';
                 </label>
 
                 @if (loadingFloors()) {
-                  <p class="muted">Loading floors...</p>
+                  <p class="text-sm text-muted">Loading floors…</p>
                 } @else if (selectedPlace() && floors().length === 0) {
-                  <p class="muted">This building has no floors yet. Create the first one.</p>
+                  <p class="text-sm text-muted">This building has no floors yet. Create the first one.</p>
                 }
 
-                <div class="status-row">
+                <div class="flex flex-wrap gap-2">
                   @if (selectedPlace()) {
-                    <button class="primary-action" type="button" (click)="startNewFloor()">
-                      New floor
-                    </button>
+                    <button uiBtn type="button" (click)="startNewFloor()">New floor</button>
                   }
                   @if (campus(); as campusValue) {
-                    <a class="secondary-action" [routerLink]="['/admin/campuses', campusValue.id]">
+                    <a uiBtn="secondary" [routerLink]="['/admin/campuses', campusValue.id]">
                       Campus configuration
                     </a>
                   }
                 </div>
               </div>
-            </div>
-          </section>
+            </app-panel>
 
-          @if (panel() === 'review' && selectedFloor(); as floor) {
-            <section class="panel">
-              <header class="panel-header">
-                <div>
-                  <h3>Review &amp; publish</h3>
-                  <p>{{ floor.name }} · {{ floor.floorLabel }}</p>
-                </div>
-                <span class="badge" [class.badge-good]="floor.roomCount > 0" [class.badge-warn]="floor.roomCount === 0">
+            @if (panel() === 'review' && selectedFloor(); as floor) {
+              <app-panel heading="Review & publish" [sub]="floor.name + ' · ' + floor.floorLabel">
+                <app-badge panelAction [tone]="floor.roomCount > 0 ? 'good' : 'warn'">
                   {{ floor.roomCount > 0 ? 'Ready' : 'Not ready' }}
-                </span>
-              </header>
-              <div class="panel-body">
-                <div class="task-list">
-                  <div class="task">
-                    <span>Background image</span>
-                    <span class="badge" [class.badge-good]="floor.backgroundImageUrl">
-                      {{ floor.backgroundImageUrl ? 'Uploaded' : 'Missing' }}
-                    </span>
+                </app-badge>
+                <div class="grid gap-3">
+                  <div class="grid gap-2.5">
+                    <div class="flex items-center justify-between gap-3 rounded-lg border border-line bg-panel p-3">
+                      <span class="text-sm">Background image</span>
+                      <app-badge [tone]="floor.backgroundImageUrl ? 'good' : 'neutral'">
+                        {{ floor.backgroundImageUrl ? 'Uploaded' : 'Missing' }}
+                      </app-badge>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 rounded-lg border border-line bg-panel p-3">
+                      <span class="text-sm">Rooms defined</span>
+                      <app-badge [tone]="floor.roomCount > 0 ? 'good' : 'warn'">{{ floor.roomCount }} rooms</app-badge>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 rounded-lg border border-line bg-panel p-3">
+                      <span class="text-sm">Timezone (from campus)</span>
+                      <app-badge>{{ floor.timezone }}</app-badge>
+                    </div>
                   </div>
-                  <div class="task">
-                    <span>Rooms defined</span>
-                    <span class="badge" [class.badge-good]="floor.roomCount > 0" [class.badge-warn]="floor.roomCount === 0">
-                      {{ floor.roomCount }} rooms
-                    </span>
-                  </div>
-                  <div class="task">
-                    <span>Timezone (from campus)</span>
-                    <span class="badge">{{ floor.timezone }}</span>
-                  </div>
-                </div>
 
-                <div class="publish-card">
-                  <strong>{{ floor.roomCount > 0 ? 'Live for members' : 'Not ready to publish' }}</strong>
-                  <p>
-                    @if (floor.roomCount > 0) {
-                      Saved rooms are immediately visible to members on the map and available for
-                      booking. Publishing is implicit in this version.
-                    } @else {
-                      Define at least one room in step 3 to make this floor usable for members.
-                    }
-                  </p>
-                  <button class="primary-action" type="button" (click)="showRooms()">
-                    Define rooms
-                  </button>
+                  <div class="grid gap-2 rounded-lg border border-line bg-panel p-3.5">
+                    <strong>{{ floor.roomCount > 0 ? 'Live for members' : 'Not ready to publish' }}</strong>
+                    <p class="text-sm leading-relaxed text-muted">
+                      @if (floor.roomCount > 0) {
+                        Saved rooms are immediately visible to members on the map and available for
+                        booking. Publishing is implicit in this version.
+                      } @else {
+                        Define at least one room in step 3 to make this floor usable for members.
+                      }
+                    </p>
+                    <button uiBtn type="button" (click)="showRooms()">Define rooms</button>
+                  </div>
                 </div>
-              </div>
-            </section>
-          } @else {
-            <section class="panel">
-              <header class="panel-header">
-                <div>
-                  <h3>Pipeline overview</h3>
-                  <p>How a floor goes from drawing to bookable rooms</p>
+              </app-panel>
+            } @else {
+              <app-panel heading="Pipeline overview" sub="How a floor goes from drawing to bookable rooms">
+                <div class="grid gap-3">
+                  <app-route-steps [steps]="pipelineSteps" />
+                  @if (!selectedFloor()) {
+                    <p class="text-sm text-muted">
+                      Select a floor (or create a new one) to continue with steps 2–4.
+                    </p>
+                  }
                 </div>
-              </header>
-              <div class="panel-body">
-                <div class="route-steps">
-                  <div class="route-step"><span>1</span><p>Select the campus, building, and floor.</p></div>
-                  <div class="route-step"><span>2</span><p>Align the uploaded plan image over the footprint.</p></div>
-                  <div class="route-step"><span>3</span><p>Draw room boundaries over the aligned plan.</p></div>
-                  <div class="route-step"><span>4</span><p>Review the summary — saved rooms go live immediately.</p></div>
-                </div>
-                @if (!selectedFloor()) {
-                  <p class="muted">Select a floor (or create a new one) to continue with steps 2–4.</p>
-                }
-              </div>
-            </section>
-          }
-        </div>
-      </section>
+              </app-panel>
+            }
+          </div>
+        </section>
       }
     </div>
   `,
@@ -298,6 +243,57 @@ export class SpaceConfigPageComponent {
     const floorId = this.selectedFloorId();
     return this.floors().find((floor) => floor.id === floorId) ?? null;
   });
+
+  protected readonly steps = computed<StepItem[]>(() => [
+    { title: 'Select space', detail: 'Choose the campus, building, and floor that will receive the plan.' },
+    {
+      title: 'Upload & align',
+      detail: 'Upload the floor image, then scale and rotate it over the footprint.',
+      disabled: !this.selectedFloor() && !this.creatingFloor(),
+    },
+    {
+      title: 'Configure rooms',
+      detail: 'Define rooms and labels on top of the aligned floor image.',
+      disabled: !this.selectedFloor(),
+    },
+    {
+      title: 'Review & publish',
+      detail: 'Resolve warnings and make the space available to members.',
+      disabled: !this.selectedFloor(),
+    },
+  ]);
+
+  private readonly panelIndex: Record<SpaceConfigPanel, number> = {
+    select: 0,
+    align: 1,
+    rooms: 2,
+    review: 3,
+  };
+  protected readonly activeStep = computed(() => this.panelIndex[this.panel()]);
+
+  protected readonly pipelineSteps = [
+    'Select the campus, building, and floor.',
+    'Align the uploaded plan image over the footprint.',
+    'Draw room boundaries over the aligned plan.',
+    'Review the summary — saved rooms go live immediately.',
+  ];
+
+  protected onStep(index: number): void {
+    switch (index) {
+      case 0:
+        this.showSelect();
+        break;
+      case 1:
+        this.panel.set('align');
+        break;
+      case 2:
+        this.showRooms();
+        break;
+      case 3:
+        this.panel.set('review');
+        break;
+    }
+  }
 
   constructor() {
     void this.initialize();

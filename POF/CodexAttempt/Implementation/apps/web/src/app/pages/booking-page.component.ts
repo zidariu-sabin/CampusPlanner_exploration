@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -13,79 +12,74 @@ import { MapsService } from '../core/maps.service';
 import { MeetingsService } from '../core/meetings.service';
 import { ResourcesService } from '../core/resources.service';
 import { UsersService } from '../core/users.service';
+import { BadgeComponent, ButtonDirective, EmptyStateComponent, PanelComponent } from '../ui';
 
 const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00 .. 19:00 starts
 
 @Component({
   selector: 'app-booking-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, MapPreviewComponent],
+  imports: [
+    FormsModule,
+    MapPreviewComponent,
+    PanelComponent,
+    BadgeComponent,
+    EmptyStateComponent,
+    ButtonDirective,
+  ],
   template: `
-    <div class="screen-shell">
+    <div class="grid content-start gap-4">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
 
       @if (loading()) {
-        <p class="muted">Loading available spaces...</p>
+        <p class="text-sm text-muted">Loading available spaces…</p>
       } @else {
-        <section class="map-layout">
-          <section class="panel">
-            <header class="panel-header">
-              <div>
-                <h3>Available rooms</h3>
-                <p>{{ resources().length }} bookable resources in your organization</p>
-              </div>
-            </header>
-            <div class="panel-body">
-              <div class="card-list">
-                @for (resource of resources(); track resource.id) {
-                  <article
-                    class="member-room-card"
-                    [class.is-selected]="resource.id === selectedResource()?.id"
-                  >
-                    <div>
-                      <h3>{{ resource.name }}</h3>
-                      <p>{{ resourceLocation(resource) }}</p>
-                      <div class="status-row">
-                        <span class="badge badge-good">
-                          {{ resource.kind === 'room' ? 'Room' : 'Outdoor space' }}
-                        </span>
-                        @if (resource.floorLabel) {
-                          <span class="badge">{{ resource.floorLabel }}</span>
-                        }
-                      </div>
+        <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_clamp(320px,32%,380px)] lg:items-start">
+          <app-panel
+            heading="Available rooms"
+            [sub]="resources().length + ' bookable resources in your organization'"
+          >
+            <div class="grid gap-2.5">
+              @for (resource of resources(); track resource.id) {
+                <article
+                  class="grid gap-3 rounded-lg border bg-panel p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                  [class]="resource.id === selectedResource()?.id ? 'border-green bg-green-soft/30' : 'border-line'"
+                >
+                  <div class="min-w-0">
+                    <h3 class="text-base font-bold">{{ resource.name }}</h3>
+                    <p class="my-1 text-sm text-muted">{{ resourceLocation(resource) }}</p>
+                    <div class="flex flex-wrap gap-2">
+                      <app-badge tone="good">{{ resource.kind === 'room' ? 'Room' : 'Outdoor space' }}</app-badge>
+                      @if (resource.floorLabel) {
+                        <app-badge>{{ resource.floorLabel }}</app-badge>
+                      }
                     </div>
-                    <button
-                      type="button"
-                      [class]="resource.id === selectedResource()?.id ? 'primary-action' : 'secondary-action'"
-                      (click)="pickResource(resource)"
-                    >
-                      {{ resource.id === selectedResource()?.id ? 'Selected' : 'Select' }}
-                    </button>
-                  </article>
-                } @empty {
-                  <p class="muted">No bookable spaces configured yet.</p>
-                }
-              </div>
+                  </div>
+                  <button
+                    type="button"
+                    [uiBtn]="resource.id === selectedResource()?.id ? '' : 'secondary'"
+                    (click)="pickResource(resource)"
+                  >
+                    {{ resource.id === selectedResource()?.id ? 'Selected' : 'Select' }}
+                  </button>
+                </article>
+              } @empty {
+                <p class="text-sm text-muted">No bookable spaces configured yet.</p>
+              }
             </div>
-          </section>
+          </app-panel>
 
-          <section class="panel">
-            @if (selectedResource(); as resource) {
-              <header class="panel-header">
-                <div>
-                  <h3>Book {{ resource.name }}</h3>
-                  <p>{{ resourceLocation(resource) }}</p>
-                </div>
-              </header>
-              <div class="panel-body">
-                <div class="booking-summary">
-                  <span class="badge badge-good">{{ resource.timezone }}</span>
+          @if (selectedResource(); as resource) {
+            <app-panel [heading]="'Book ' + resource.name" [sub]="resourceLocation(resource)">
+              <div class="grid gap-3">
+                <div class="flex flex-wrap gap-2">
+                  <app-badge tone="good">{{ resource.timezone }}</app-badge>
                   @if (resource.floorLabel) {
-                    <span class="badge">{{ resource.floorLabel }}</span>
+                    <app-badge>{{ resource.floorLabel }}</app-badge>
                   }
-                  <span class="badge">{{ resource.kind === 'room' ? 'Room' : 'Outdoor space' }}</span>
+                  <app-badge>{{ resource.kind === 'room' ? 'Room' : 'Outdoor space' }}</app-badge>
                 </div>
 
                 <label>
@@ -93,17 +87,16 @@ const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00
                   <input type="date" [(ngModel)]="selectedDate" (change)="onDateChange()" />
                 </label>
 
-                <strong class="selector-label">Time slots</strong>
+                <strong class="text-xs font-black uppercase tracking-wider text-strong-2">Time slots</strong>
                 @if (loadingSlots()) {
-                  <p class="muted">Checking availability...</p>
+                  <p class="text-sm text-muted">Checking availability…</p>
                 } @else {
-                  <div class="slot-grid">
+                  <div class="grid grid-cols-4 gap-2">
                     @for (hour of slotHours; track hour) {
                       <button
                         type="button"
-                        class="slot"
-                        [class.busy]="isBusy(hour)"
-                        [class.selected]="selectedHour() === hour"
+                        class="rounded-lg border py-2.5 text-sm font-bold transition-colors"
+                        [class]="slotClass(hour)"
                         [disabled]="isBusy(hour)"
                         (click)="selectedHour.set(hour)"
                       >
@@ -122,19 +115,22 @@ const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00
                   <textarea [(ngModel)]="description" placeholder="Optional agenda"></textarea>
                 </label>
 
-                <strong class="selector-label">Participants</strong>
-                <div class="card-list">
+                <strong class="text-xs font-black uppercase tracking-wider text-strong-2">Participants</strong>
+                <div class="grid gap-2">
                   @for (user of invitableUsers(); track user.id) {
-                    <label class="compact-card participant">
-                      <span>{{ user.displayName }} · {{ user.email }}</span>
+                    <label
+                      class="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-line bg-panel p-3"
+                    >
+                      <span class="text-sm font-bold text-ink">{{ user.displayName }} · {{ user.email }}</span>
                       <input
                         type="checkbox"
+                        class="h-4 w-4 accent-strong"
                         [checked]="participantIds().has(user.id)"
                         (change)="toggleParticipant(user.id)"
                       />
                     </label>
                   } @empty {
-                    <p class="muted">No other members to invite.</p>
+                    <p class="text-sm text-muted">No other members to invite.</p>
                   }
                 </div>
 
@@ -142,114 +138,67 @@ const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00
                   <p class="message error">{{ conflictError() }}</p>
                 }
 
-                <div class="booking-detail-card">
-                  <div><span>Room</span><strong>{{ resource.name }}</strong></div>
-                  <div>
-                    <span>Floor</span>
+                <div class="grid gap-2.5 rounded-lg border border-line bg-panel p-3 text-sm">
+                  <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                    <span class="font-semibold text-muted">Room</span><strong>{{ resource.name }}</strong>
+                  </div>
+                  <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                    <span class="font-semibold text-muted">Floor</span>
                     <strong>{{ resource.floorLabel || resource.campusPlaceName || '—' }}</strong>
                   </div>
-                  <div><span>Organizer</span><strong>{{ organizerName() }}</strong></div>
+                  <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                    <span class="font-semibold text-muted">Organizer</span><strong>{{ organizerName() }}</strong>
+                  </div>
                   @if (selectedHour() !== null) {
-                    <div><span>Slot</span><strong>{{ selectedDate }} · {{ hourLabel(selectedHour()!) }}</strong></div>
+                    <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+                      <span class="font-semibold text-muted">Slot</span>
+                      <strong>{{ selectedDate }} · {{ hourLabel(selectedHour()!) }}</strong>
+                    </div>
                   }
                 </div>
 
                 <button
-                  class="primary-action"
+                  uiBtn
+                  class="w-full"
                   type="button"
                   [disabled]="!canConfirm() || saving()"
                   (click)="confirm()"
                 >
-                  {{ saving() ? 'Booking...' : 'Confirm booking' }}
+                  {{ saving() ? 'Booking…' : 'Confirm booking' }}
                 </button>
               </div>
-            } @else {
-              <header class="panel-header">
-                <div>
-                  <h3>Select a space</h3>
-                  <p>Choose a room or outdoor space to see availability</p>
-                </div>
-              </header>
-              <div class="panel-body">
-                <div class="inline-form-title">
-                  <strong>No space selected</strong>
-                  <span>Pick a room or outdoor space from the list to review its open slots.</span>
-                </div>
-              </div>
-            }
-          </section>
+            </app-panel>
+          } @else {
+            <app-panel heading="Select a space" sub="Choose a room or outdoor space to see availability">
+              <app-empty-state
+                title="No space selected"
+                message="Pick a room or outdoor space from the list to review its open slots."
+              />
+            </app-panel>
+          }
         </section>
 
         @if (selectedResource()?.floorMapId) {
-          <section class="panel">
-            <header class="panel-header">
-              <div>
-                <h3>Floor context</h3>
-                <p>
-                  {{ selectedResource()!.campusPlaceName }} ·
-                  {{ selectedResource()!.floorLabel }} — the selected room is highlighted.
-                </p>
-              </div>
-            </header>
-            <div class="panel-body">
-              @if (floorMap(); as map) {
-                <app-map-preview
-                  [map]="map"
-                  [compact]="true"
-                  [selectedRoomId]="selectedResource()!.roomId"
-                />
-              } @else {
-                <p class="muted">Loading floor preview...</p>
-              }
-            </div>
-          </section>
+          <app-panel
+            heading="Floor context"
+            [sub]="
+              selectedResource()!.campusPlaceName +
+              ' · ' +
+              selectedResource()!.floorLabel +
+              ' — the selected room is highlighted.'
+            "
+          >
+            @if (floorMap(); as map) {
+              <app-map-preview [map]="map" [compact]="true" [selectedRoomId]="selectedResource()!.roomId" />
+            } @else {
+              <p class="text-sm text-muted">Loading floor preview…</p>
+            }
+          </app-panel>
         }
       }
     </div>
   `,
-  styles: `
-    .participant {
-      cursor: pointer;
-    }
-
-    .participant span {
-      font-size: 13px;
-      color: var(--ink);
-      font-weight: 700;
-    }
-
-    /* Available rooms list fits the screen: the panel is capped to the viewport,
-       the header stays fixed and the list scrolls internally. */
-    .map-layout > .panel:first-child {
-      display: flex;
-      flex-direction: column;
-      max-height: calc(100vh - 180px);
-    }
-
-    .map-layout > .panel:first-child > .panel-header {
-      flex: 0 0 auto;
-    }
-
-    .map-layout > .panel:first-child > .panel-body {
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow: auto;
-    }
-
-    /* Booking form: NO inner scroll — keep it compact so it fits the screen. */
-    .map-layout > .panel:last-child > .panel-body {
-      gap: 8px;
-    }
-
-    .map-layout > .panel:last-child textarea {
-      min-height: 52px;
-    }
-
-    .map-layout > .panel:last-child .booking-summary,
-    .map-layout > .panel:last-child .booking-detail-card {
-      margin: 2px 0;
-    }
-  `,
+  styles: ``,
 })
 export class BookingPageComponent {
   private readonly route = inject(ActivatedRoute);
@@ -342,6 +291,16 @@ export class BookingPageComponent {
 
   protected isBusy(hour: number): boolean {
     return this.busyHours().has(hour);
+  }
+
+  protected slotClass(hour: number): string {
+    if (this.isBusy(hour)) {
+      return 'border-line bg-panel-soft text-muted line-through';
+    }
+    if (this.selectedHour() === hour) {
+      return 'border-strong bg-strong text-white';
+    }
+    return 'border-line bg-panel text-ink hover:border-strong';
   }
 
   protected toggleParticipant(userId: string): void {

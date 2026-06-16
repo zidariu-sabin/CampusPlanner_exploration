@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
@@ -14,71 +13,77 @@ import { MemberMapboxViewComponent } from '../components/member-mapbox-view.comp
 import { CampusesService } from '../core/campuses.service';
 import { FloorsService } from '../core/floors.service';
 import { MapsService } from '../core/maps.service';
+import { BadgeComponent, ButtonDirective, EmptyStateComponent, PanelComponent } from '../ui';
 
 @Component({
   selector: 'app-member-map-page',
   standalone: true,
-  imports: [CommonModule, MemberMapboxViewComponent],
+  imports: [
+    MemberMapboxViewComponent,
+    PanelComponent,
+    BadgeComponent,
+    EmptyStateComponent,
+    ButtonDirective,
+  ],
   template: `
-    <div class="screen-shell">
+    <div class="grid content-start gap-4">
       @if (error()) {
         <p class="message error">{{ error() }}</p>
       }
 
-      <section class="map-layout side-first">
-        <section class="panel">
-          <header class="panel-header">
-            <div>
-              <h3>Map selector</h3>
-              <p>{{ selectorSubtitle() }}</p>
-            </div>
-          </header>
-          <div class="panel-body">
-            <div class="selection-summary">
-              <div><span>Campus</span><strong>{{ selectedCampus()?.name || 'None selected' }}</strong></div>
-              <div><span>Space</span><strong>{{ selectedPlace()?.name || 'None selected' }}</strong></div>
-              <div><span>Floor</span><strong>{{ selectedFloor()?.floorLabel || 'None selected' }}</strong></div>
+      <section class="grid gap-4 lg:grid-cols-[clamp(280px,26%,340px)_minmax(0,1fr)] lg:items-start">
+        <app-panel heading="Map selector" [sub]="selectorSubtitle()">
+          <div class="grid gap-4">
+            <div class="grid gap-2 rounded-lg border border-line bg-panel-muted p-3 text-xs">
+              @for (row of summaryRows(); track row.label) {
+                <div class="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2">
+                  <span class="font-bold text-muted">{{ row.label }}</span>
+                  <strong class="truncate">{{ row.value }}</strong>
+                </div>
+              }
             </div>
 
-            <div class="map-stage-list">
-              <strong class="selector-label">Campuses</strong>
+            <div class="grid gap-2">
+              <strong class="text-xs font-black uppercase tracking-wider text-strong-2">Campuses</strong>
               @if (loadingCampuses()) {
-                <p class="muted">Loading campuses...</p>
+                <p class="text-sm text-muted">Loading campuses…</p>
               }
               @for (campus of campuses(); track campus.id) {
                 <button
                   type="button"
-                  [class.active]="campus.id === selectedCampus()?.id"
+                  class="grid gap-1 rounded-lg border p-2.5 text-left text-ink transition-colors"
+                  [class]="campus.id === selectedCampus()?.id ? 'border-green bg-green-soft' : 'border-line bg-panel hover:bg-panel-soft'"
                   (click)="selectCampus(campus)"
                 >
-                  <strong>{{ campus.name }}</strong>
-                  <span>{{ campus.placeCount }} spaces · {{ campus.roomCount }} rooms</span>
+                  <strong class="text-sm">{{ campus.name }}</strong>
+                  <span class="text-xs text-muted">{{ campus.placeCount }} spaces · {{ campus.roomCount }} rooms</span>
                 </button>
               } @empty {
                 @if (!loadingCampuses()) {
-                  <p class="muted">No campuses configured yet.</p>
+                  <p class="text-sm text-muted">No campuses configured yet.</p>
                 }
               }
             </div>
 
             @if (selectedCampus()) {
-              <div class="map-stage-list">
-                <strong class="selector-label">Spaces</strong>
+              <div class="grid gap-2">
+                <strong class="text-xs font-black uppercase tracking-wider text-strong-2">Spaces</strong>
                 @if (loadingPlaces()) {
-                  <p class="muted">Loading spaces...</p>
+                  <p class="text-sm text-muted">Loading spaces…</p>
                 }
                 @for (place of places(); track place.id) {
                   <button
                     type="button"
-                    [class.active]="place.id === selectedPlace()?.id"
+                    class="grid gap-1 rounded-lg border p-2.5 text-left text-ink transition-colors"
+                    [class]="place.id === selectedPlace()?.id ? 'border-green bg-green-soft' : 'border-line bg-panel hover:bg-panel-soft'"
                     (click)="selectPlace(place)"
                   >
-                    <strong>{{ place.name }}</strong>
-                    <span>{{ typeLabel(place) }}{{ place.bookable ? ' · bookable' : '' }}</span>
+                    <strong class="text-sm">{{ place.name }}</strong>
+                    <span class="text-xs capitalize text-muted">{{ typeLabel(place) }}{{ place.bookable ? ' · bookable' : '' }}</span>
                   </button>
                 } @empty {
                   @if (!loadingPlaces()) {
-                    <p class="muted">This campus has no spaces yet.</p>
+                    <p class="text-sm text-muted">This campus has no spaces yet.</p>
                   }
                 }
               </div>
@@ -86,16 +91,17 @@ import { MapsService } from '../core/maps.service';
 
             @if (selectedPlace(); as place) {
               @if (place.buildingId) {
-                <div class="floor-selector">
-                  <strong>Floors</strong>
+                <div class="grid gap-2.5 rounded-lg border border-line bg-panel-muted p-3">
+                  <strong class="text-sm">Floors</strong>
                   @if (loadingFloors()) {
-                    <p>Loading floors...</p>
+                    <p class="text-sm text-muted">Loading floors…</p>
                   }
-                  <div>
+                  <div class="flex flex-wrap gap-1.5">
                     @for (floor of floors(); track floor.id) {
                       <button
                         type="button"
-                        [class.active]="floor.id === selectedFloor()?.id"
+                        class="rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors"
+                        [class]="floor.id === selectedFloor()?.id ? 'border-strong bg-strong text-white' : 'border-line bg-panel text-muted hover:text-ink'"
                         (click)="selectFloor(floor)"
                       >
                         {{ floor.floorLabel }}
@@ -103,87 +109,97 @@ import { MapsService } from '../core/maps.service';
                     }
                   </div>
                   @if (selectedFloor(); as floor) {
-                    <p>{{ floor.roomCount }} rooms on this floor</p>
+                    <p class="text-xs text-muted">{{ floor.roomCount }} rooms on this floor</p>
                   } @else if (!loadingFloors() && floors().length === 0) {
-                    <p>No floors mapped for this building yet.</p>
+                    <p class="text-xs text-muted">No floors mapped for this building yet.</p>
                   }
                 </div>
               } @else if (place.bookable && place.bookableResourceId) {
-                <div class="inline-form-title">
-                  <strong>Outdoor space</strong>
-                  <span>This space is bookable as a whole.</span>
-                </div>
-                <button class="primary-action" type="button" (click)="bookResource(place.bookableResourceId)">
+                <app-empty-state title="Outdoor space" message="This space is bookable as a whole." />
+                <button uiBtn type="button" (click)="bookResource(place.bookableResourceId)">
                   Book {{ place.name }}
                 </button>
               }
             }
 
             @if (selectedFloor(); as floor) {
-              <div class="task-list">
-                <div class="task">
-                  <span>Available rooms on this floor</span>
-                  <span class="badge badge-good">{{ floor.roomCount }} rooms</span>
+              <div class="grid gap-2.5">
+                <div class="flex items-center justify-between gap-3 rounded-lg border border-line bg-panel p-3">
+                  <span class="text-sm">Available rooms on this floor</span>
+                  <app-badge tone="good">{{ floor.roomCount }} rooms</app-badge>
                 </div>
-                <div class="task">
-                  <span>Selected layer</span>
-                  <span class="badge">{{ floor.floorLabel }} rooms</span>
+                <div class="flex items-center justify-between gap-3 rounded-lg border border-line bg-panel p-3">
+                  <span class="text-sm">Selected layer</span>
+                  <app-badge>{{ floor.floorLabel }} rooms</app-badge>
                 </div>
               </div>
             }
           </div>
-        </section>
+        </app-panel>
 
-        <section class="panel canvas">
-          <header class="panel-header">
-            <div>
-              <h3>{{ canvasTitle() }}</h3>
-              <p>{{ canvasSubtitle() }}</p>
-            </div>
-            @if (loadingFloorMap()) {
-              <span class="badge">Loading floor…</span>
-            } @else if (selectedCampus()) {
-              <span class="badge badge-good">{{ selectedCampus()!.placeCount }} spaces</span>
-            } @else {
-              <span class="badge">{{ campuses().length }} campuses</span>
-            }
-          </header>
-          <div class="panel-body">
-            <div class="map-search">
-              <div class="map-search-field">
-                <span class="map-search-icon" aria-hidden="true">⌕</span>
+        <app-panel [heading]="canvasTitle()" [sub]="canvasSubtitle()">
+          @if (loadingFloorMap()) {
+            <app-badge panelAction>Loading floor…</app-badge>
+          } @else if (selectedCampus()) {
+            <app-badge panelAction tone="good">{{ selectedCampus()!.placeCount }} spaces</app-badge>
+          } @else {
+            <app-badge panelAction>{{ campuses().length }} campuses</app-badge>
+          }
+
+          <div class="grid gap-3">
+            <div class="relative z-[5]">
+              <div class="relative flex items-center">
+                <svg
+                  class="pointer-events-none absolute left-3 h-4 w-4 text-muted"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  aria-hidden="true"
+                >
+                  <circle cx="7" cy="7" r="4.5" />
+                  <path d="M11 11l3 3" stroke-linecap="round" />
+                </svg>
                 <input
-                  type="search"
+                  type="text"
                   placeholder="Search for a room…"
                   autocomplete="off"
+                  class="w-full rounded-lg border border-line bg-panel py-2.5 pl-9 pr-9 text-sm text-ink focus:border-strong focus:outline-none focus:ring-2 focus:ring-strong/15"
                   [value]="searchTerm()"
                   (input)="onSearchInput($any($event.target).value)"
                   (focus)="searchOpen.set(true)"
                   (blur)="closeSearch()"
                 />
                 @if (searchTerm()) {
-                  <button type="button" class="map-search-clear" (click)="clearSearch()" aria-label="Clear search">
+                  <button
+                    type="button"
+                    class="absolute right-2 grid h-5 w-5 place-items-center rounded-full border-0 bg-panel-soft p-0 text-base leading-none text-ink hover:bg-line"
+                    (click)="clearSearch()"
+                    aria-label="Clear search"
+                  >
                     ×
                   </button>
                 }
               </div>
 
               @if (searchOpen() && searchTerm().trim().length >= 2) {
-                <div class="map-search-results">
+                <div
+                  class="absolute left-0 right-0 top-[calc(100%+6px)] z-10 max-h-72 overflow-y-auto rounded-lg border border-line bg-panel p-1.5 shadow-panel"
+                >
                   @if (searching()) {
-                    <p class="map-search-hint">Searching…</p>
+                    <p class="px-3 py-2.5 text-sm text-muted">Searching…</p>
                   } @else if (searchResults().length === 0) {
-                    <p class="map-search-hint">No rooms match “{{ searchTerm() }}”.</p>
+                    <p class="px-3 py-2.5 text-sm text-muted">No rooms match “{{ searchTerm() }}”.</p>
                   } @else {
                     @for (result of searchResults(); track result.roomId) {
                       <button
                         type="button"
-                        class="map-search-result"
+                        class="flex w-full flex-col gap-0.5 rounded-md border-0 bg-transparent px-3 py-2 text-left hover:bg-panel-soft"
                         (mousedown)="$event.preventDefault()"
                         (click)="goToRoom(result)"
                       >
-                        <strong>{{ result.roomName }}</strong>
-                        <span>{{ result.campusName }} · {{ result.campusPlaceName }} · {{ result.floorLabel }}</span>
+                        <strong class="text-sm text-ink">{{ result.roomName }}</strong>
+                        <span class="text-xs text-muted">{{ result.campusName }} · {{ result.campusPlaceName }} · {{ result.floorLabel }}</span>
                       </button>
                     }
                   }
@@ -204,141 +220,24 @@ import { MapsService } from '../core/maps.service';
             />
 
             @if (selectedRoom(); as room) {
-              <div class="room-bar">
+              <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-panel-muted p-3">
                 <div>
                   <strong>{{ room.name }}</strong>
-                  <p class="muted">
-                    {{ floorMap()?.campusPlaceName }} · {{ floorMap()?.floorLabel }}
-                  </p>
+                  <p class="text-sm text-muted">{{ floorMap()?.campusPlaceName }} · {{ floorMap()?.floorLabel }}</p>
                 </div>
                 @if (room.bookableResourceId) {
-                  <button class="primary-action" type="button" (click)="bookResource(room.bookableResourceId)">
-                    Book this room
-                  </button>
+                  <button uiBtn type="button" (click)="bookResource(room.bookableResourceId)">Book this room</button>
                 } @else {
-                  <span class="muted">This room is not bookable.</span>
+                  <span class="text-sm text-muted">This room is not bookable.</span>
                 }
               </div>
             }
           </div>
-        </section>
+        </app-panel>
       </section>
     </div>
   `,
-  styles: `
-    .canvas {
-      min-height: 540px;
-    }
-
-    .map-search {
-      position: relative;
-      margin-bottom: 12px;
-      z-index: 5;
-    }
-
-    .map-search-field {
-      position: relative;
-      display: flex;
-      align-items: center;
-    }
-
-    .map-search-icon {
-      position: absolute;
-      left: 12px;
-      font-size: 16px;
-      color: var(--muted, #6b7280);
-      pointer-events: none;
-    }
-
-    .map-search-field input {
-      width: 100%;
-      padding: 10px 36px 10px 34px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      font-size: 14px;
-      background: #fff;
-    }
-
-    .map-search-field input:focus {
-      outline: none;
-      border-color: var(--strong, #0f766e);
-      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
-    }
-
-    .map-search-clear {
-      position: absolute;
-      right: 8px;
-      width: 22px;
-      height: 22px;
-      border: none;
-      border-radius: 50%;
-      background: #eef1f1;
-      color: #374151;
-      font-size: 16px;
-      line-height: 1;
-      cursor: pointer;
-    }
-
-    .map-search-results {
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 0;
-      right: 0;
-      max-height: 280px;
-      overflow-y: auto;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
-      padding: 6px;
-    }
-
-    .map-search-hint {
-      margin: 0;
-      padding: 10px 12px;
-      color: var(--muted, #6b7280);
-      font-size: 13px;
-    }
-
-    .map-search-result {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      width: 100%;
-      text-align: left;
-      padding: 9px 12px;
-      border: none;
-      border-radius: 8px;
-      background: transparent;
-      cursor: pointer;
-    }
-
-    .map-search-result:hover {
-      background: #f3f6f6;
-    }
-
-    .map-search-result strong {
-      font-size: 14px;
-      color: var(--ink, #111827);
-    }
-
-    .map-search-result span {
-      font-size: 12px;
-      color: var(--muted, #6b7280);
-    }
-
-    .room-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      padding: 12px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fbfcfc;
-    }
-  `,
+  styles: ``,
 })
 export class MemberMapPageComponent {
   private readonly campusesService = inject(CampusesService);
@@ -595,6 +494,14 @@ export class MemberMapPageComponent {
       return campus.name;
     }
     return 'Choose a campus to inspect';
+  }
+
+  protected summaryRows(): { label: string; value: string }[] {
+    return [
+      { label: 'Campus', value: this.selectedCampus()?.name || 'None selected' },
+      { label: 'Space', value: this.selectedPlace()?.name || 'None selected' },
+      { label: 'Floor', value: this.selectedFloor()?.floorLabel || 'None selected' },
+    ];
   }
 
   private clearFloorSelection(): void {

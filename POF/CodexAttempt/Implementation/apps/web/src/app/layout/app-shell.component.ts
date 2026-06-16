@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -11,6 +10,7 @@ import {
 import { filter } from 'rxjs';
 
 import { AuthService } from '../core/auth.service';
+import { ButtonDirective } from '../ui';
 
 interface NavItem {
   label: string;
@@ -33,54 +33,92 @@ const ADMIN_NAV: NavItem[] = [
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [ButtonDirective, RouterOutlet, RouterLink, RouterLinkActive],
   template: `
-    <div class="app-shell">
-      <header class="topbar">
-        <a class="brand-block" routerLink="/">
-          <div class="brand-mark">CP</div>
-          <div class="brand-copy">
-            <p class="eyebrow">{{ auth.organization()?.name || 'Workspace' }}</p>
-            <strong class="brand-name">Campus Planner</strong>
-          </div>
-        </a>
-
-        <nav class="topnav" aria-label="Primary">
-          @for (item of navItems(); track item.link) {
-            <a
-              [routerLink]="item.link"
-              routerLinkActive="active"
-              [routerLinkActiveOptions]="{ exact: item.exact }"
-            >
-              {{ item.label }}
-            </a>
-          }
-        </nav>
-
-        <div class="topbar-right">
-          @if (auth.isAdmin()) {
-            <div class="role-toggle view-switch" aria-label="Switch view">
-              <button type="button" [class.active]="!adminMode()" (click)="switchView('member')">
-                Member view
-              </button>
-              <button type="button" [class.active]="adminMode()" (click)="switchView('admin')">
-                Admin panel
-              </button>
+    <div class="min-h-screen">
+      <header class="sticky top-0 z-20 border-b border-line bg-panel/90 backdrop-blur-sm">
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6">
+          <a class="order-1 flex items-center gap-3" routerLink="/">
+            <div class="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-strong text-sm font-black text-white">
+              CP
             </div>
-          }
-          <button class="secondary-action" type="button" (click)="auth.logout()">Sign out</button>
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-widest text-strong-2">
+                {{ auth.organization()?.name || 'Workspace' }}
+              </p>
+              <strong class="block truncate text-base font-bold tracking-tight text-ink">
+                Campus Planner
+              </strong>
+            </div>
+          </a>
+
+          <nav
+            class="order-3 -mx-1 flex w-full gap-1 overflow-x-auto px-1 sm:order-2 sm:mx-0 sm:w-auto sm:flex-1 sm:justify-center sm:px-0"
+            aria-label="Primary"
+          >
+            @for (item of navItems(); track item.link) {
+              <a
+                class="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-bold text-muted transition-colors hover:bg-panel-soft hover:text-ink"
+                [routerLink]="item.link"
+                routerLinkActive="bg-green-soft !text-green"
+                [routerLinkActiveOptions]="{ exact: item.exact }"
+              >
+                {{ item.label }}
+              </a>
+            }
+          </nav>
+
+          <div class="order-2 ml-auto flex items-center gap-2 sm:order-3 sm:ml-0">
+            @if (auth.isAdmin()) {
+              <div
+                class="flex rounded-lg border border-line bg-panel-soft p-1"
+                role="group"
+                aria-label="Switch view"
+              >
+                <button
+                  type="button"
+                  class="rounded-md px-3 py-1.5 text-xs font-bold transition-colors"
+                  [class]="
+                    !adminMode() ? 'bg-strong text-white' : 'bg-transparent text-muted hover:bg-panel hover:text-ink'
+                  "
+                  (click)="switchView('member')"
+                >
+                  Member view
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md px-3 py-1.5 text-xs font-bold transition-colors"
+                  [class]="adminMode() ? 'bg-strong text-white' : 'bg-transparent text-muted hover:bg-panel hover:text-ink'"
+                  (click)="switchView('admin')"
+                >
+                  Admin panel
+                </button>
+              </div>
+            }
+            <button uiBtn="secondary" type="button" (click)="auth.logout()">Sign out</button>
+          </div>
         </div>
       </header>
 
-      <main class="workspace">
-        <header class="workspace-header">
-          <div>
-            <p class="eyebrow">Current screen · {{ viewLabel() }} view</p>
-            <h2>{{ screenTitle() }}</h2>
+      <main class="w-full px-4 py-5 sm:px-6">
+        <header
+          class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-panel px-5 py-4 shadow-panel"
+        >
+          <div class="min-w-0">
+            <p class="text-xs font-bold uppercase tracking-widest text-strong-2">
+              Current screen · {{ viewLabel() }} view
+            </p>
+            <h2 class="text-2xl font-bold leading-tight tracking-tight text-ink sm:text-3xl">
+              {{ screenTitle() }}
+            </h2>
           </div>
-          <div class="tenant-chip">
-            <span class="avatar">{{ initials() }}</span>
-            {{ auth.user()?.displayName }} · {{ roleLabel() }}
+          <div
+            class="flex items-center gap-2.5 rounded-full border border-line px-3 py-1.5 text-sm font-semibold text-muted"
+          >
+            <span class="grid h-7 w-7 place-items-center rounded-full bg-blue-soft text-xs font-black text-blue">
+              {{ initials() }}
+            </span>
+            <span class="truncate">{{ auth.user()?.displayName }} · {{ roleLabel() }}</span>
           </div>
         </header>
 
