@@ -13,7 +13,13 @@ import {
   imports: [CommonModule, MapEditorFormComponent],
   template: `
     <div class="page editor-page">
-      <app-map-editor-form [mapId]="mapId" [workflow]="workflow" />
+      <app-map-editor-form
+        [mapId]="mapId"
+        [buildingId]="buildingId"
+        [seedCampusId]="seedCampusId"
+        [seedPlaceId]="seedPlaceId"
+        [workflow]="workflow"
+      />
     </div>
   `,
   styles: `
@@ -27,6 +33,9 @@ export class MapEditorPageComponent {
   private readonly route = inject(ActivatedRoute);
 
   protected readonly mapId = this.route.snapshot.paramMap.get('mapId');
+  protected readonly buildingId = this.route.snapshot.paramMap.get('buildingId');
+  protected readonly seedCampusId = this.route.snapshot.queryParamMap.get('campusId');
+  protected readonly seedPlaceId = this.route.snapshot.queryParamMap.get('placeId');
   protected readonly workflow = (this.route.snapshot.data['workflow'] ??
     'map') as MapEditorWorkflow;
 }

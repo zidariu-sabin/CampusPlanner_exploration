@@ -22,8 +22,9 @@ export function errorHandler(
   }
 
   if (error instanceof QueryFailedError) {
-    if ((error as QueryFailedError & { driverError?: { constraint?: string } }).driverError?.constraint === 'meetings_no_room_overlap') {
-      return response.status(409).json({ message: 'The selected room is already booked for that hour.' });
+    const constraint = (error as QueryFailedError & { driverError?: { constraint?: string } }).driverError?.constraint;
+    if (constraint === 'meetings_no_resource_overlap') {
+      return response.status(409).json({ message: 'The selected space is already booked for that hour.' });
     }
   }
 

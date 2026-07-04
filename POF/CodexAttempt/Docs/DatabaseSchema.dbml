@@ -1,0 +1,147 @@
+// Use DBML to define your database structure
+// Docs: https://dbml.dbdiagram.io/docs
+// Generated from the TypeORM entities in apps/api/src/entities
+
+Table organizations {
+  id uuid [primary key]
+  name varchar
+  slug varchar [unique, not null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table users {
+  id uuid [primary key]
+  organization_id uuid [not null]
+  email varchar [unique, not null]
+  password_hash varchar
+  display_name varchar
+  role varchar [note: 'OrganizationRole: owner | admin | member ...']
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table organization_invites {
+  id uuid [primary key]
+  organization_id uuid [not null]
+  token varchar [unique, not null]
+  role varchar [note: 'OrganizationRole']
+  email varchar [null]
+  created_by_user_id uuid [not null]
+  expires_at timestamptz
+  used_at timestamptz [null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table campuses {
+  id uuid [primary key]
+  organization_id uuid [not null]
+  name varchar
+  timezone varchar [default: 'Europe/Bucharest']
+  boundary_geojson jsonb [null, note: 'GeoJsonPolygon']
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table campus_places {
+  id uuid [primary key]
+  campus_id uuid [not null]
+  name varchar
+  type varchar [note: 'CampusPlaceType: building | ...', default: 'building']
+  bookable boolean [default: false]
+  footprint_geojson jsonb [note: 'GeoJsonPolygon']
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table buildings {
+  id uuid [primary key]
+  campus_place_id uuid [unique, not null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table floor_maps {
+  id uuid [primary key]
+  building_id uuid [not null]
+  name varchar
+  floor_label varchar
+  footprint_geojson jsonb [note: 'GeoJsonPolygon']
+  background_image_url varchar [null]
+  background_fit_mode varchar [default: 'contain', note: 'BackgroundFitMode']
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table rooms {
+  id uuid [primary key]
+  floor_map_id uuid [not null]
+  name varchar
+  color varchar [default: '#1a5f7a']
+  sort_order integer [default: 0]
+  geometry_geojson jsonb [note: 'GeoJsonPolygon']
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table bookable_resources {
+  id uuid [primary key]
+  organization_id uuid [not null]
+  kind varchar [note: 'BookableResourceKind: room | ...', default: 'room']
+  room_id uuid [unique, null]
+  campus_place_id uuid [unique, null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table meetings {
+  id uuid [primary key]
+  bookable_resource_id uuid [not null]
+  created_by_user_id uuid [not null]
+  title varchar
+  description text [default: '']
+  starts_at_utc timestamptz
+  ends_at_utc timestamptz
+  created_at timestamp
+  updated_at timestamp
+}
+
+// Join table for the ManyToMany between meetings and users
+Table meeting_participants {
+  meeting_id uuid [not null]
+  user_id uuid [not null]
+
+  indexes {
+    (meeting_id, user_id) [pk]
+  }
+}
+
+// --- Relations ---
+
+// organizations -> children (onDelete CASCADE)
+Ref: users.organization_id > organizations.id // many-to-one
+Ref: campuses.organization_id > organizations.id // many-to-one
+Ref: organization_invites.organization_id > organizations.id // many-to-one
+Ref: bookable_resources.organization_id > organizations.id // many-to-one
+
+// invite creator (onDelete RESTRICT)
+Ref: organization_invites.created_by_user_id > users.id // many-to-one
+
+// campus hierarchy
+Ref: campus_places.campus_id > campuses.id // many-to-one (CASCADE)
+Ref: buildings.campus_place_id - campus_places.id // one-to-one (CASCADE)
+Ref: floor_maps.building_id > buildings.id // many-to-one (CASCADE)
+Ref: rooms.floor_map_id > floor_maps.id // many-to-one (CASCADE)
+
+// bookable resource targets either a room or a campus place (one-to-one)
+Ref: bookable_resources.room_id - rooms.id // one-to-one (CASCADE)
+Ref: bookable_resources.campus_place_id - campus_places.id // one-to-one (CASCADE)
+
+// meetings
+Ref: meetings.bookable_resource_id > bookable_resources.id // many-to-one (RESTRICT)
+Ref: meetings.created_by_user_id > users.id // many-to-one (RESTRICT)
+
+// meeting participants (many-to-many)
+Ref: meeting_participants.meeting_id > meetings.id
+Ref: meeting_participants.user_id > users.id

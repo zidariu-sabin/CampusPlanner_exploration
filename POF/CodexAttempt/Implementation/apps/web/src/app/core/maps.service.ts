@@ -1,48 +1,46 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
-  CreateMapRequest,
-  MapDto,
-  MapSummaryDto,
+  FloorMapDto,
+  FloorMapSummaryDto,
   ProcessBackgroundImageRequest,
   ReplaceRoomsRequest,
-  UpdateMapRequest,
+  UpdateFloorMapRequest,
 } from '@campus/contracts';
 import { firstValueFrom } from 'rxjs';
 
 import { apiUrl } from './api';
 
+/** Floor-map API client. Floor maps are created through FloorsService under a building. */
 @Injectable({ providedIn: 'root' })
 export class MapsService {
   private readonly http = inject(HttpClient);
 
-  list(): Promise<MapSummaryDto[]> {
-    return firstValueFrom(this.http.get<MapSummaryDto[]>(apiUrl('/maps')));
+  list(): Promise<FloorMapSummaryDto[]> {
+    return firstValueFrom(this.http.get<FloorMapSummaryDto[]>(apiUrl('/floor-maps')));
   }
 
-  get(mapId: string): Promise<MapDto> {
-    return firstValueFrom(this.http.get<MapDto>(apiUrl(`/maps/${mapId}`)));
+  get(floorMapId: string): Promise<FloorMapDto> {
+    return firstValueFrom(this.http.get<FloorMapDto>(apiUrl(`/floor-maps/${floorMapId}`)));
   }
 
-  create(payload: CreateMapRequest): Promise<MapDto> {
-    return firstValueFrom(this.http.post<MapDto>(apiUrl('/maps'), payload));
+  update(floorMapId: string, payload: UpdateFloorMapRequest): Promise<FloorMapDto> {
+    return firstValueFrom(this.http.patch<FloorMapDto>(apiUrl(`/floor-maps/${floorMapId}`), payload));
   }
 
-  update(mapId: string, payload: UpdateMapRequest): Promise<MapDto> {
-    return firstValueFrom(this.http.patch<MapDto>(apiUrl(`/maps/${mapId}`), payload));
+  replaceRooms(floorMapId: string, payload: ReplaceRoomsRequest): Promise<FloorMapDto> {
+    return firstValueFrom(this.http.put<FloorMapDto>(apiUrl(`/floor-maps/${floorMapId}/rooms`), payload));
   }
 
-  replaceRooms(mapId: string, payload: ReplaceRoomsRequest): Promise<MapDto> {
-    return firstValueFrom(this.http.put<MapDto>(apiUrl(`/maps/${mapId}/rooms`), payload));
-  }
-
-  uploadBackground(mapId: string, file: File): Promise<MapDto> {
+  uploadBackground(floorMapId: string, file: File): Promise<FloorMapDto> {
     const formData = new FormData();
     formData.append('image', file);
-    return firstValueFrom(this.http.post<MapDto>(apiUrl(`/maps/${mapId}/background-image`), formData));
+    return firstValueFrom(this.http.post<FloorMapDto>(apiUrl(`/floor-maps/${floorMapId}/background-image`), formData));
   }
 
-  processBackground(mapId: string, payload: ProcessBackgroundImageRequest): Promise<MapDto> {
-    return firstValueFrom(this.http.post<MapDto>(apiUrl(`/maps/${mapId}/background-image/process`), payload));
+  processBackground(floorMapId: string, payload: ProcessBackgroundImageRequest): Promise<FloorMapDto> {
+    return firstValueFrom(
+      this.http.post<FloorMapDto>(apiUrl(`/floor-maps/${floorMapId}/background-image/process`), payload),
+    );
   }
 }

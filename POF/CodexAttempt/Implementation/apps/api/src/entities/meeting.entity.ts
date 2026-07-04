@@ -8,9 +8,10 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  Relation,
 } from 'typeorm';
 
-import { RoomEntity } from './room.entity.js';
+import { BookableResourceEntity } from './bookable-resource.entity.js';
 import { UserEntity } from './user.entity.js';
 
 @Entity({ name: 'meetings' })
@@ -18,8 +19,8 @@ export class MeetingEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'uuid', name: 'room_id' })
-  roomId = '';
+  @Column({ type: 'uuid', name: 'bookable_resource_id' })
+  bookableResourceId = '';
 
   @Column({ type: 'uuid', name: 'created_by_user_id' })
   createdByUserId = '';
@@ -42,13 +43,13 @@ export class MeetingEntity {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
 
-  @ManyToOne(() => RoomEntity, (room) => room.meetings, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'room_id' })
-  room!: RoomEntity;
+  @ManyToOne(() => BookableResourceEntity, (resource) => resource.meetings, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'bookable_resource_id' })
+  bookableResource!: Relation<BookableResourceEntity>;
 
   @ManyToOne(() => UserEntity, (user) => user.meetingsCreated, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'created_by_user_id' })
-  createdBy!: UserEntity;
+  createdBy!: Relation<UserEntity>;
 
   @ManyToMany(() => UserEntity, (user) => user.meetings)
   @JoinTable({
@@ -56,5 +57,5 @@ export class MeetingEntity {
     joinColumn: { name: 'meeting_id', referencedColumnName: 'id' },
     inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' },
   })
-  participants!: UserEntity[];
+  participants!: Relation<UserEntity>[];
 }

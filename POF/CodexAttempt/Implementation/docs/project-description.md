@@ -1,237 +1,411 @@
 # Campus Planner Project Description
 
-Campus Planner is a TypeScript monorepo for creating campus floor maps, defining bookable rooms on those maps, and scheduling meetings in those rooms. The current implementation is organized as a web client, an HTTP API, shared DTO/geometry contracts, and a PostgreSQL database.
+Campus Planner is a TypeScript monorepo for managing organization-owned campus spaces, drawing real-world map footprints, configuring indoor floor maps, defining bookable rooms, and scheduling meetings. The architecture is centered on a tenant-style organization scope, a campus hierarchy, and a shared GeoJSON coordinate model.
 
 ## Application Architecture
 
 The repository is split into npm workspaces:
 
-- `apps/web`: Angular 20 frontend. It uses standalone components, Angular Router, Angular forms, HttpClient services, and shared contracts from `@campus/contracts`.
-- `apps/api`: Node.js API written in TypeScript. It uses Express 5 for routing, TypeORM 0.3 for database entities/migrations, PostgreSQL through `pg`, Zod for request validation, JWT authentication, bcrypt password hashing, Multer for background image uploads, and Luxon for timezone-aware meeting windows.
-- `packages/contracts`: Shared TypeScript package used by both frontend and backend. It defines DTOs, GeoJSON polygon types, editor room models, and geometry helpers.
-- `infra`: Local infrastructure, currently a Docker Compose PostgreSQL 16 service.
-- `apps/storage/uploads`: Default runtime file storage location for uploaded map background images when the API runs with the current default `UPLOADS_DIR`.
+- `apps/web`: Angular frontend using standalone components, Angular Router, Angular forms, HttpClient services, Mapbox GL JS, Mapbox Draw, and shared contracts from `@campus/contracts`.
+- `apps/api`: Express API written in TypeScript. It uses TypeORM for PostgreSQL persistence, Zod for request validation, JWT authentication, bcrypt password hashing, Multer for background image uploads, Sharp for image processing, and Luxon for timezone-aware meeting windows.
+- `packages/contracts`: Shared TypeScript package used by web and API. It defines DTOs, GeoJSON polygon types, editor models, booking request types, and geometry/projection helpers.
+- `infra`: Local infrastructure, currently a Docker Compose PostgreSQL service.
+- `apps/storage/uploads`: Default runtime storage location for uploaded floor-plan/background images.
 
-The root scripts run the project as a monorepo:
+Root scripts:
 
-- `npm run dev`: starts the API watcher and Angular development server together.
+- `npm run dev`: starts the API watcher and Angular development server.
 - `npm run build`: builds contracts, API, and web.
 - `npm run test`: runs contracts and API tests.
 
+## Domain Architecture
+
+The intended domain model is:
+
+```text
+Organization
+  Users / Organization Roles
+  Campuses
+    Configurable Spaces
+      Buildings
+        FloorMaps
+          Rooms
+  BookableResources
+  Meetings
+```
+
+The currently implemented campus hierarchy uses the backend term `CampusPlace`. In the frontend, this should be presented as `Configurable Space`, because it may represent a building, sports field, tennis court, parking area, outdoor area, or another mappable space.
+
+### Organization Scope
+
+Organization scope is the tenant boundary for the application.
+
+Planned rules:
+
+- Each user belongs to exactly one organization.
+- Users can only see and manage data from their organization.
+- There is no platform-level superadmin in the planned v1 organization model.
+- Registration creates a new organization and makes the registering user the organization `owner`.
+- Existing organizations add users through invite links.
+- Meeting participants are limited to users in the same organization.
+
+Organization roles:
+
+- `owner`: full organization control, including invites and management actions.
+- `admin`: manages campuses, configurable spaces, buildings, floor maps, rooms, resources, and bookings.
+- `member`: views organization resources, creates bookings, and manages their own meetings.
+
+All organization members can view and book all organization resources in v1. Fine-grained campus/resource assignment is intentionally deferred.
+
+### Campus
+
+`Campus` is the top-level spatial container inside an organization.
+
+Responsibilities:
+
+- Stores the campus name and timezone.
+- Stores an optional campus boundary GeoJSON polygon.
+- Owns all configurable spaces under that campus.
+- Provides the timezone used by resources and meetings under the campus.
+
+Frontend flow:
+
+- The dashboard starts from campuses.
+- Opening a campus shows an intermediate choice:
+  - Configure campus bounds.
+  - Create configurable space.
+- Campus bounds are configured before drawing spaces.
+
+### Configurable Space / CampusPlace
+
+`CampusPlace` is the backend model for a frontend `Configurable Space`.
+
+Responsibilities:
+
+- Represents a real-world object drawn on Mapbox.
+- Stores name, type, footprint GeoJSON, and bookable flag.
+- Belongs to one campus.
+- Can be directly bookable when it is not a building.
+
+Supported types:
+
+- `building`
+- `sports_field`
+- `tennis_court`
+- `parking`
+- `outdoor_area`
+- `other`
+
+Important decision:
+
+- Outdoor spaces should not require fake buildings, floors, or rooms.
+- A football field or tennis court can be a directly bookable configurable space.
+- A building configurable space branches into building/floor/room configuration.
+
+### Building
+
+`Building` is a one-to-one extension of `CampusPlace(type = 'building')`.
+
+Responsibilities:
+
+- Exists only for configurable spaces of type `building`.
+- Owns one or more floor maps.
+- Reuses the building configurable space footprint as the real-world building placement.
+
+### FloorMap
+
+`FloorMap` represents an indoor floor-level map inside a building.
+
+Responsibilities:
+
+- Belongs to one building.
+- Stores floor name, floor label, footprint GeoJSON, optional background image URL, and background fit mode.
+- Owns room polygons.
+- Reuses the existing SVG/canvas floor-plan editing workflow.
+
+The old frontend aliases `MapDto` and `MapSummaryDto` may still exist as compatibility names, but conceptually these are floor maps.
+
+### Room
+
+`Room` is a bookable indoor polygon on a floor map.
+
+Responsibilities:
+
+- Belongs to one floor map.
+- Stores name, color, sort order, and GeoJSON polygon geometry.
+- Has a generated `BookableResource`.
+
+Room geometry is validated against the parent floor map footprint before persistence.
+
+### BookableResource
+
+`BookableResource` is the generic booking target.
+
+It can represent:
+
+- A room.
+- A directly bookable configurable space.
+
+Meetings point to `bookableResourceId`, not directly to room ids. This keeps booking consistent across indoor rooms and outdoor spaces.
+
+### Meeting
+
+`Meeting` represents a one-hour booking.
+
+Responsibilities:
+
+- Points to a `BookableResource`.
+- Stores creator, participants, title, description, and UTC start/end timestamps.
+- Uses the owning campus timezone to convert local date/hour inputs to UTC.
+- Prevents overlapping bookings for the same resource.
+
 ## Backend Architecture
 
-The API exposes authenticated REST endpoints grouped by resource:
+The API exposes authenticated REST endpoints grouped by resource.
 
-- `auth.routes.ts`: login and authentication operations.
-- `users.routes.ts`: user list/access operations.
-- `maps.routes.ts`: map CRUD, background image upload, and room replacement.
-- `meetings.routes.ts`: meeting creation, update, deletion, and listing.
+Current/planned endpoint groups:
 
-`server.ts` starts the Express application. `app.ts` wires middleware, API routes, uploaded static files, and centralized error handling. The TypeORM data source is configured in `apps/api/src/data-source.ts` with:
+- `/auth`: registration, login, and current user.
+- `/users`: organization-scoped user list.
+- `/organizations/me`: current organization summary.
+- `/organizations/invites`: invite creation/listing for owner/admin users.
+- `/campuses`: campus CRUD within the current organization.
+- `/campuses/:campusId/places`: configurable space management.
+- `/buildings/:buildingId/floors`: floor map creation for building spaces.
+- `/floor-maps`: floor map loading, update, background image upload/processing, and room replacement.
+- `/bookable-resources`: generic booking resource lookup.
+- `/meetings`: meeting creation, update, deletion, and listing by bookable resource/date.
 
-- database type: PostgreSQL
-- models: `UserEntity`, `FloorMapEntity`, `RoomEntity`, `MeetingEntity`
-- migrations: `InitialSchema1720000000000`
-- `synchronize: false`, so schema changes are controlled through migrations
+`server.ts` starts the Express application. `app.ts` wires middleware, routes, uploaded static files, and centralized error handling. TypeORM is configured in `apps/api/src/data-source.ts` with `synchronize: false`, so schema changes are controlled through migrations.
 
-The backend uses TypeORM decorators for database models. Request payloads are validated with Zod at the route boundary, then geometry-specific normalization is handled by `ensurePolygon` and shared contract helpers.
+Request payloads are validated with Zod at the route boundary. Geometry-specific normalization is handled by `ensurePolygon` and shared helpers from `@campus/contracts`.
 
 ## Database Architecture
 
-PostgreSQL stores the application state. The initial migration creates the `pgcrypto` extension for UUID generation and `btree_gist` for the meeting overlap exclusion constraint.
+PostgreSQL stores application state. The schema uses JSONB for GeoJSON geometry and regular relational constraints for hierarchy and booking integrity.
 
-### Tables
+Important tables:
 
-`users`
+- `organizations`: tenant/workspace container.
+- `users`: login/profile data, organization membership, and organization role.
+- `organization_invites`: invite tokens for joining an existing organization.
+- `campuses`: organization-owned campus containers with optional boundary GeoJSON.
+- `campus_places`: configurable spaces within a campus.
+- `buildings`: one-to-one extension of building-type configurable spaces.
+- `floor_maps`: indoor floor-level maps under buildings.
+- `rooms`: indoor room polygons under floor maps.
+- `bookable_resources`: generic booking targets for rooms and directly bookable spaces.
+- `meetings`: bookings for bookable resources.
+- `meeting_participants`: many-to-many join table between meetings and users.
 
-- Stores login and profile data.
-- Primary key: `id uuid`.
-- Important columns: `email`, `password_hash`, `display_name`, `role`.
-- `email` is unique.
+Fresh-start migration note:
 
-`maps`
+- The campus hierarchy migration was treated as a fresh-start schema change.
+- Existing old `maps -> rooms -> meetings` data is not preserved by the migration plan.
+- Local development databases that already recorded old migrations must be reset before the new schema can run.
 
-- Stores one floor-map definition.
-- Primary key: `id uuid`.
-- Important columns:
-  - `name`: human-readable map name.
-  - `floor_label`: floor identifier such as "Ground Floor".
-  - `timezone`: timezone used when interpreting meeting dates/hours for rooms on this map. Default is `Europe/Bucharest`.
-  - `footprint_geojson jsonb`: the map boundary polygon.
-  - `background_image_url`: optional uploaded image URL.
-  - `background_fit_mode`: currently `contain`.
-- Relationship: one map has many rooms.
+Local reset command:
 
-`rooms`
-
-- Stores rooms belonging to a map.
-- Primary key: `id uuid`.
-- Foreign key: `map_id` references `maps(id)` with `ON DELETE CASCADE`.
-- Important columns:
-  - `name`: room label displayed in the UI.
-  - `color`: fill color used when rendering the room polygon.
-  - `sort_order`: display/export order.
-  - `geometry_geojson jsonb`: the room polygon.
-- Relationship: one room belongs to one map and can have many meetings.
-
-`meetings`
-
-- Stores room bookings.
-- Primary key: `id uuid`.
-- Foreign keys:
-  - `room_id` references `rooms(id)` with `ON DELETE RESTRICT`.
-  - `created_by_user_id` references `users(id)` with `ON DELETE RESTRICT`.
-- Important columns:
-  - `title`, `description`
-  - `starts_at_utc`, `ends_at_utc`
-- Constraints:
-  - `meetings_positive_window`: ensures `ends_at_utc > starts_at_utc`.
-  - `meetings_no_room_overlap`: PostgreSQL GiST exclusion constraint preventing overlapping time ranges for the same room.
-
-`meeting_participants`
-
-- Join table for the many-to-many relation between meetings and users.
-- Composite primary key: `meeting_id`, `user_id`.
-- Both foreign keys cascade on delete.
-
-## Map And Room Polygon Model
-
-Map and room geometry is stored as GeoJSON-compatible `Polygon` objects in JSONB columns:
-
-```json
-{
-  "type": "Polygon",
-  "coordinates": [
-    [
-      [0, 0],
-      [560, 0],
-      [560, 360],
-      [0, 360],
-      [0, 0]
-    ]
-  ]
-}
+```bash
+docker compose -f infra/docker-compose.yml down -v
+docker compose -f infra/docker-compose.yml up -d
+npm run dev
 ```
 
-The shared `GeoJsonPolygon` type is defined in `packages/contracts/src/index.ts`:
-
-- `GeoJsonPosition`: `[number, number]`
-- `GeoJsonPolygon.type`: always `"Polygon"`
-- `GeoJsonPolygon.coordinates`: an array of rings, with the first ring used as the outer boundary
-
-The helper `createPolygon` closes a ring automatically by repeating the first point at the end when needed. `polygonToPointsAttribute` converts the polygon's outer ring into the SVG `points` format used by the frontend.
-
-### Map Footprint
-
-The map footprint is stored in `maps.footprint_geojson`. It represents the outer boundary of the floor plan. The Angular map editor lets an administrator paste or edit this GeoJSON directly. The frontend parses the text as a `Polygon`, renders it as an SVG `<polygon>`, and sends it to the API when the map is saved.
-
-### Room Geometry
-
-Room geometry is stored in `rooms.geometry_geojson`. The current editor creates and edits rooms as axis-aligned rectangles, then converts each rectangle into a GeoJSON polygon with `roomModelToPolygon`.
-
-Even though the current editor UI is rectangle-based, the persisted room field is a generic GeoJSON polygon. The preview and SVG export paths render the saved polygon directly, so the storage model can support non-rectangular rooms later if the editor is expanded.
-
-Before rooms are saved, both the frontend and backend check that every room polygon stays inside the map footprint. The backend enforces this in `replaceRooms` using `polygonContainsPolygon`, so invalid room geometry cannot be persisted by bypassing the UI.
-
-Room replacement is transactional:
-
-1. Load the map and existing rooms.
-2. Reject replacement if meetings already exist for that map.
-3. Validate and normalize every room polygon.
-4. Delete all previous rooms for the map.
-5. Insert the replacement room set.
-
-This keeps room geometry consistent with meeting history. Once meetings exist, room geometry is locked from bulk replacement to avoid orphaning or changing the meaning of existing bookings.
+`npm run build` only compiles code. It does not run migrations or update PostgreSQL.
 
 ## Coordinate System
 
-The project uses a local planar coordinate system for floor-map geometry, not geographic latitude/longitude coordinates.
+The application stores map geometry as GeoJSON `Polygon` objects in EPSG:4326 longitude/latitude coordinates.
 
-Coordinates are interpreted as SVG/user-space units:
+Canonical coordinate rule:
 
-- X grows from left to right.
-- Y grows from top to bottom.
-- The origin `(0, 0)` is wherever the map author chooses in the footprint GeoJSON, commonly the upper-left corner of the drawing.
-- Units are arbitrary but must be consistent across the map footprint, room polygons, and background image. In practice they behave like pixels or design units.
+```text
+[longitude, latitude]
+```
 
-The frontend derives the SVG `viewBox` from the bounding box of `footprintGeoJson`. It adds padding around that bounding box for display. Because the `viewBox` is based on geometry, the same coordinates are used consistently for:
+This applies to:
 
-- editor pointer interactions
-- room drag and resize operations
-- map preview rendering
-- background image placement
-- SVG export
+- Campus boundary polygons.
+- Configurable space footprints.
+- Building/floor map footprints.
+- Room polygons.
 
-When a background image is present, it is rendered at the footprint bounding box:
+The app does not store local pixel coordinates as the source of truth. Local/pixel-like coordinates are only derived for SVG/canvas rendering.
 
-- `x = footprint.minX`
-- `y = footprint.minY`
-- `width = footprint.width`
-- `height = footprint.height`
-- `preserveAspectRatio = "none"`
+### Mapbox Layer
 
-This means background images are stretched to the footprint bounding rectangle. The polygon footprint and room polygons remain the source of truth; the image is only a visual reference/overlay.
+Mapbox is the geographic/world-coordinate layer.
 
-The standalone `POF/scripts/ancpiCoordinatesTransformer.js` script demonstrates converting Romanian Stereo 70 coordinates (`EPSG:3844`) to WGS84 longitude/latitude GeoJSON. That script is outside the current Implementation runtime. The app does not currently store a CRS/SRID with a map, and it does not project geographic coordinates into the editor coordinate space. If ANCPI or WGS84 polygons are imported into this app, they should first be transformed into the same local SVG coordinate system used by the floor-plan image and rooms.
+Responsibilities:
 
-## Geometry Validation And Shared Helpers
+- Display real-world context with satellite or streets styles.
+- Draw and edit campus boundaries.
+- Draw and edit configurable space footprints.
+- Preview floor map footprints in geographic context.
+- Show optional floor-plan image overlays where useful.
+- Show view-only room polygons in booking/map preview views.
 
-Geometry logic lives in `@campus/contracts` so both the web app and API use the same rules. Important helpers include:
+Mapbox consumes saved GeoJSON directly, because Mapbox also uses longitude/latitude GeoJSON.
+
+Supported frontend Mapbox controls:
+
+- Style selector: satellite or streets.
+- Floor-plan overlay toggle.
+- Footprint draw/edit tools through Mapbox Draw.
+
+Controls intentionally not included in the current pass:
+
+- Extra terrain/building/outdoor style toggles with unclear value.
+- Full floor-plan alignment tooling on Mapbox.
+- Room drawing as the primary Mapbox interaction.
+
+### SVG/Canvas Layer
+
+The SVG/canvas editor is the precision indoor editor.
+
+Responsibilities:
+
+- Render floor map footprint.
+- Render and align the uploaded floor-plan/background image.
+- Draw, drag, resize, and edit rooms.
+- Export SVG.
+
+The SVG/canvas layer uses Web Mercator projection helpers:
+
+```text
+GeoJSON lon/lat -> projected canvas coordinates -> edit/render -> unproject -> GeoJSON lon/lat
+```
+
+This allows the editor to work with visually stable planar coordinates while preserving geographic GeoJSON as the persisted format.
+
+### Background Images
+
+Background images are visual references, not geometry sources of truth.
+
+Current behavior:
+
+- Images are associated with floor maps.
+- The image is placed under the projected floor map footprint.
+- Rotate, scale, offset, and crop edits are represented through background image edit drafts and processing requests.
+- Saved geometry remains GeoJSON regardless of image manipulation.
+
+### Geometry Helpers
+
+Geometry logic lives in `@campus/contracts` so the web app and API share the same rules.
+
+Important helpers:
 
 - `closeRing`: ensures a polygon ring ends where it starts.
 - `createPolygon`: creates a valid single-ring polygon.
-- `createRectanglePolygon`: creates a polygon from `x`, `y`, `width`, and `height`.
-- `getOuterRing`: reads the first polygon ring.
-- `getBoundingBox`: calculates min/max X/Y and width/height.
-- `polygonToPointsAttribute`: converts GeoJSON positions to SVG points.
-- `isPointInPolygon`: ray-casting point-in-polygon test, including boundary points.
-- `polygonContainsPolygon`: checks whether all candidate polygon points and edges stay inside a container polygon.
-- `roomModelToPolygon` and `polygonToRoomModel`: convert between editor rectangle models and persisted polygons.
+- `createRectanglePolygon`: creates a polygon from rectangle bounds.
+- `projectGeoJsonPosition`: projects lon/lat to Web Mercator canvas coordinates.
+- `unprojectGeoJsonPosition`: converts projected coordinates back to lon/lat.
+- `projectGeoJsonPolygon`: projects a polygon for rendering/editing.
+- `unprojectGeoJsonPolygon`: converts projected polygon edits back to persisted GeoJSON.
+- `getProjectedBoundingBox`: gets projected bounds for viewBox/image placement.
+- `projectedPolygonToPointsAttribute`: creates SVG points from projected GeoJSON.
+- `polygonContainsPolygon`: validates containment, such as rooms inside floor map footprints.
+- `roomModelToPolygon` and `polygonToRoomModel`: bridge editor room models and persisted room geometry.
 
-## Data Flow For Maps And Rooms
+## Data Flows
 
-Map creation/update:
+### Organization Onboarding
 
-1. Admin edits map metadata and footprint GeoJSON in Angular.
-2. Angular sends `CreateMapRequest` or `UpdateMapRequest` to the API.
-3. API validates basic fields with Zod.
-4. API normalizes the footprint with `ensurePolygon`.
-5. TypeORM saves the `FloorMapEntity` into `maps`.
+New organization:
 
-Room editing:
+1. User registers with organization name.
+2. API creates organization.
+3. API creates user as organization `owner`.
+4. JWT/session includes organization context.
 
-1. Admin places rooms on the SVG editor canvas.
-2. Angular stores in-progress rooms as `EditorRoomModel` rectangles.
-3. Before saving, each editor rectangle is converted to a GeoJSON polygon.
-4. Angular sends a `ReplaceRoomsRequest` to `PUT /maps/:mapId/rooms`.
-5. API validates every polygon and confirms it is inside the map footprint.
-6. TypeORM replaces the map's room rows inside a transaction.
+Joining an organization:
 
-Map rendering:
+1. Owner/admin creates invite link.
+2. Invited user registers through invite token.
+3. API creates user inside invite organization with assigned role.
+4. Invite is marked used or expires.
 
-1. Angular fetches `MapDto` from the API.
-2. The footprint and rooms are rendered as SVG polygons.
-3. Optional background image is placed under the footprint and rooms.
-4. Labels are positioned using each room polygon's bounding box.
+### Campus And Configurable Space Setup
+
+1. Owner/admin opens organization dashboard.
+2. User creates or opens a campus.
+3. User chooses between configuring campus bounds or creating a configurable space.
+4. Campus bounds are drawn/edited on Mapbox and saved as GeoJSON.
+5. Configurable space creation starts from the campus footprint and is adjusted on Mapbox.
+6. If the configurable space is a building, the UI offers floor map creation.
+7. If the configurable space is directly bookable, it receives a `BookableResource`.
+
+### Floor Map And Room Setup
+
+1. Owner/admin opens a building configurable space.
+2. User creates a floor map with footprint GeoJSON.
+3. User uploads/aligns the floor-plan image in the SVG/canvas editor.
+4. User draws rooms on the projected floor map canvas.
+5. Frontend converts room editor models to GeoJSON.
+6. API validates that rooms remain inside the floor map footprint.
+7. API replaces rooms and creates room bookable resources.
+
+### Booking
+
+1. User selects a bookable resource, either a room or directly bookable configurable space.
+2. UI loads meetings for the resource and selected local date.
+3. User creates a one-hour meeting with same-organization participants.
+4. API converts the local date/hour using the resource campus timezone.
+5. Database prevents overlapping meetings for the same bookable resource.
 
 ## Scheduling Model
 
-Meetings are stored in UTC timestamps, but users create them from a map-local date and hour. The API uses the map's `timezone` to convert local meeting windows to UTC before persistence.
+Meetings are stored as UTC timestamps.
 
-The database enforces no overlapping meetings per room with the `meetings_no_room_overlap` exclusion constraint:
+User-facing scheduling inputs:
+
+- Local date.
+- Hour.
+- Bookable resource.
+- Participants.
+
+Timezone source:
+
+- The owning campus timezone.
+
+Overlap rule:
+
+- No overlapping meetings are allowed for the same `bookableResourceId`.
+- The `[)` time range convention means a meeting can start exactly when the previous one ends.
+
+Database constraint shape:
 
 ```sql
 EXCLUDE USING gist (
-  room_id WITH =,
+  bookable_resource_id WITH =,
   tstzrange(starts_at_utc, ends_at_utc, '[)') WITH &&
 )
 ```
 
-The `[)` time range convention means the start is inclusive and the end is exclusive, allowing a meeting to start exactly when the previous one ends.
+## Security And Access Control
+
+Organization scope is the primary access-control boundary.
+
+Rules:
+
+- Every authenticated request has a user and organization context.
+- Organization users can only access rows owned by their organization.
+- Owner/admin users can configure campuses, spaces, buildings, floors, rooms, resources, and invites.
+- Members can view/book organization resources and manage their own meetings.
+- User listing and meeting participants are organization-scoped.
+
+Implementation implication:
+
+- API queries must not trust client-provided organization ids.
+- Organization id should be derived from `request.user.organizationId`.
+- Nested resource lookups must verify ownership through campus or bookable resource relations.
 
 ## Current Limitations
 
-- Geometry is stored as JSONB GeoJSON, not PostGIS geometry. This is sufficient for the current SVG/local-coordinate workflow, but spatial indexing and advanced spatial queries would require PostGIS or additional derived columns.
-- Only the outer ring is used by the shared rendering helpers. Interior holes in polygons are not currently rendered or validated as separate holes.
-- The editor creates axis-aligned rectangular rooms, although the database can store arbitrary polygon outlines.
-- Background image fitting is currently fixed to `contain` in the model, while rendering stretches the image to the footprint bounding box.
+- Geometry is stored as JSONB GeoJSON, not PostGIS geometry. Spatial indexing and advanced geospatial queries would require PostGIS or derived spatial columns.
+[- Only the outer polygon ring is used by the current rendering/validation helpers. Interior holes are not fully modeled in UI behavior.]: #
+- Mapbox is not the primary room editor. Room editing remains in SVG/canvas.
+- Fine-grained permissions by campus/resource are deferred.
+- Multi-organization membership and organization switching are deferred.
+

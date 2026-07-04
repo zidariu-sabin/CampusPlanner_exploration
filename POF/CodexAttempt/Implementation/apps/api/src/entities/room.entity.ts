@@ -5,21 +5,22 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
-  OneToMany,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  Relation,
 } from 'typeorm';
 
+import { BookableResourceEntity } from './bookable-resource.entity.js';
 import { FloorMapEntity } from './floor-map.entity.js';
-import { MeetingEntity } from './meeting.entity.js';
 
 @Entity({ name: 'rooms' })
 export class RoomEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'uuid', name: 'map_id' })
-  mapId = '';
+  @Column({ type: 'uuid', name: 'floor_map_id' })
+  floorMapId = '';
 
   @Column({ type: 'varchar' })
   name = '';
@@ -39,10 +40,10 @@ export class RoomEntity {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
 
-  @ManyToOne(() => FloorMapEntity, (map) => map.rooms, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'map_id' })
-  map!: FloorMapEntity;
+  @ManyToOne(() => FloorMapEntity, (floorMap) => floorMap.rooms, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'floor_map_id' })
+  floorMap!: Relation<FloorMapEntity>;
 
-  @OneToMany(() => MeetingEntity, (meeting) => meeting.room)
-  meetings!: MeetingEntity[];
+  @OneToOne(() => BookableResourceEntity, (resource) => resource.room)
+  bookableResource!: Relation<BookableResourceEntity> | null;
 }

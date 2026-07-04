@@ -1,18 +1,16 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import {
   EditableRoomInput,
   EditorRoomModel,
   EditorRoomShape,
+  FloorMapDto,
   GeoJsonPolygon,
   GeoJsonPosition,
-  MapDto,
-  MapSummaryDto,
   createPolygon,
   createRectanglePolygon,
-  getBoundingBox,
   getProjectedBoundingBox,
   polygonContainsPolygon,
   polygonToRoomModel,
@@ -23,14 +21,19 @@ import {
 import {
   type BackgroundImageEditDraft,
   type CanvasMode,
+  DEFAULT_IMAGE_OPACITY,
   createDefaultCropRect,
   toBackgroundProcessRequest,
 } from '../core/background-image-editor';
 import { assetUrl } from '../core/api';
+import { CampusesService } from '../core/campuses.service';
+import { FloorsService } from '../core/floors.service';
 import { downloadMapSvg, readBlobAsDataUrl, type ExportableMap } from '../core/map-svg-export';
 import { MapsService } from '../core/maps.service';
 import { ImageManipulationToolsComponent } from './image-manipulation-tools.component';
 import { MapEditorCanvasComponent } from './map-editor-canvas.component';
+import { MapboxFootprintPickerComponent } from './mapbox-footprint-picker.component';
+import { BadgeComponent, ButtonDirective } from '../ui';
 
 export type MapEditorWorkflow = 'map' | 'rooms';
 
@@ -43,6 +46,9 @@ export type MapEditorWorkflow = 'map' | 'rooms';
     RouterLink,
     ImageManipulationToolsComponent,
     MapEditorCanvasComponent,
+    MapboxFootprintPickerComponent,
+    BadgeComponent,
+    ButtonDirective,
   ],
   template: `
     <div class="editor-form" [class.page]="!embedded" [class.embedded-form]="embedded">
@@ -51,13 +57,13 @@ export type MapEditorWorkflow = 'map' | 'rooms';
           <h1>{{ headerTitle() }}</h1>
           <p class="muted">{{ headerSubtitle() }}</p>
         </div>
-        <div class="chips">
-          <span class="chip">SVG editor</span>
-          <span class="chip">GeoJSON native</span>
+        <div class="flex flex-wrap gap-2">
+          <app-badge>SVG editor</app-badge>
+          <app-badge>GeoJSON native</app-badge>
           @if (workflow === 'map') {
-            <span class="chip">Image tools</span>
+            <app-badge>Image tools</app-badge>
           } @else {
-            <span class="chip">Room boundaries</span>
+            <app-badge>Room boundaries</app-badge>
           }
         </div>
       </section>
@@ -70,29 +76,32 @@ export type MapEditorWorkflow = 'map' | 'rooms';
         <p class="message error">{{ error() }}</p>
       }
 
-      <section class="grid-2 editor-layout">
+      <section
+        class="grid-2 editor-layout"
+        [class.map-editor-layout]="workflow === 'map'"
+        [class.rooms-layout]="workflow === 'rooms'"
+      >
         @if (workflow === 'map') {
           <article class="card panel form-panel">
-            <h2>Map settings</h2>
+            <h2>Floor settings</h2>
+            @if (lockFootprint) {
+              <p class="muted timezone-note">
+                The footprint is fixed to the building outline. Upload and align the floor-plan image only.
+              </p>
+            }
             <label>Name <input [(ngModel)]="name" /></label>
             <label>Floor label <input [(ngModel)]="floorLabel" /></label>
-            <label>Timezone <input [(ngModel)]="timezone" /></label>
-            <label>
-              Parent map
-              <select
-                [ngModel]="parentMapId() ?? ''"
-                (ngModelChange)="parentMapId.set($event || null)"
-              >
-                <option value="">No parent</option>
-                @for (map of availableParentMaps(); track map.id) {
-                  <option [value]="map.id">{{ map.name }} · {{ map.floorLabel }}</option>
-                }
-              </select>
-            </label>
-            <label>
-              Footprint GeoJSON
-              <textarea [(ngModel)]="footprintText"></textarea>
-            </label>
+            @if (timezoneDisplay()) {
+              <p class="muted timezone-note">
+                Timezone: {{ timezoneDisplay() }} (read-only, derived from the campus)
+              </p>
+            }
+            @if (!lockFootprint) {
+              <label>
+                Footprint GeoJSON
+                <textarea [(ngModel)]="footprintText"></textarea>
+              </label>
+            }
             <label>
               Background image
               <input type="file" accept="image/*" (change)="onBackgroundSelected($event)" />
@@ -113,12 +122,14 @@ export type MapEditorWorkflow = 'map' | 'rooms';
             />
 
             <div class="actions">
-              <button type="button" class="ghost" (click)="loadSampleFootprint()">
-                Use sample footprint
-              </button>
-              <button type="button" (click)="saveMap()">Save map</button>
-              @if (mapId()) {
-                <a class="button ghost" [routerLink]="['/maps', mapId(), 'edit', 'rooms']">
+              @if (!lockFootprint) {
+                <button uiBtn="secondary" type="button" (click)="loadSampleFootprint()">
+                  Use sample footprint
+                </button>
+              }
+              <button uiBtn type="button" (click)="saveMap()">Save floor</button>
+              @if (mapId() && !lockFootprint) {
+                <a uiBtn="secondary" [routerLink]="['/admin/floors', mapId(), 'edit', 'rooms']">
                   Define rooms
                 </a>
               }
@@ -131,42 +142,47 @@ export type MapEditorWorkflow = 'map' | 'rooms';
             <h2>Editor canvas</h2>
             <div class="actions">
               @if (workflow === 'rooms') {
-                <div class="segmented" aria-label="Room shape">
+                <div class="flex gap-1 rounded-lg border border-line bg-panel-soft p-1" role="group" aria-label="Room shape">
                   <button
                     type="button"
-                    class="ghost"
-                    [class.active]="roomShape() === 'rectangle'"
+                    class="rounded-md px-3 py-1.5 text-xs font-bold transition-colors"
+                    [class]="roomShape() === 'rectangle' ? 'bg-strong text-white' : 'bg-transparent text-muted hover:text-ink'"
                     (click)="setRoomShape('rectangle')"
                   >
                     Square
                   </button>
                   <button
                     type="button"
-                    class="ghost"
-                    [class.active]="roomShape() === 'polygon'"
+                    class="rounded-md px-3 py-1.5 text-xs font-bold transition-colors"
+                    [class]="roomShape() === 'polygon' ? 'bg-strong text-white' : 'bg-transparent text-muted hover:text-ink'"
                     (click)="setRoomShape('polygon')"
                   >
                     Polygon
                   </button>
                 </div>
-                <button type="button" class="ghost" (click)="exportSvg()">Export SVG</button>
-                <button type="button" class="ghost" (click)="addRoom()">
+                <button uiBtn="secondary" type="button" (click)="exportSvg()">Export SVG</button>
+                <button uiBtn="secondary" type="button" (click)="addRoom()">
                   {{ roomShape() === 'polygon' ? 'Start polygon' : 'Add square' }}
                 </button>
                 @if (selectedRoom()) {
-                  <button type="button" class="danger" (click)="removeSelectedRoom()">
-                    Delete room
-                  </button>
+                  <button uiBtn="danger" type="button" (click)="removeSelectedRoom()">Delete room</button>
                 }
               } @else if (mapId()) {
-                <a class="button ghost" [routerLink]="['/maps', mapId(), 'edit']">
-                  Editor dashboard
-                </a>
+                <a uiBtn="secondary" [routerLink]="['/admin/floors', mapId(), 'edit']">Editor dashboard</a>
               }
             </div>
           </div>
 
           <p class="muted canvas-mode-hint">{{ canvasModeHint() }}</p>
+
+          @if (workflow === 'map' && !lockFootprint) {
+            <app-mapbox-footprint-picker
+              [footprint]="parsedFootprint()"
+              [backgroundUrl]="backgroundUrl()"
+              [backgroundDraft]="backgroundDraft()"
+              (footprintChange)="setFootprintFromMapbox($event)"
+            />
+          }
 
           <app-map-editor-canvas
             [footprint]="parsedFootprint()"
@@ -184,17 +200,16 @@ export type MapEditorWorkflow = 'map' | 'rooms';
             (polygonRoomCreated)="addPolygonRoom($event)"
           />
         </article>
-      </section>
 
-      @if (workflow === 'rooms') {
-        <section class="grid-2">
-          <article class="card panel">
+        @if (workflow === 'rooms') {
+          <div class="rooms-side">
+          <article class="card panel rooms-form">
             <div class="section-header">
               <div>
                 <h2>Rooms</h2>
                 <p class="muted">Name, color, and adjust room geometry directly on the canvas.</p>
               </div>
-              <span class="chip">{{ rooms().length }} rooms</span>
+              <app-badge>{{ rooms().length }} rooms</app-badge>
             </div>
             <div class="room-list">
               @for (room of rooms(); track room.id) {
@@ -234,13 +249,13 @@ export type MapEditorWorkflow = 'map' | 'rooms';
             </div>
           </article>
 
-          <article class="card panel">
+          <article class="card panel rooms-preview">
             <div class="section-header">
               <div>
                 <h2>Rooms GeoJSON preview</h2>
                 <p class="muted">This matches the rooms array sent to the API when you save.</p>
               </div>
-              <span class="chip">{{ rooms().length }} room payloads</span>
+              <app-badge>{{ rooms().length }} room payloads</app-badge>
             </div>
             @if (rooms().length > 0) {
               <pre class="json-preview">{{ roomsPayloadPreview() }}</pre>
@@ -253,19 +268,17 @@ export type MapEditorWorkflow = 'map' | 'rooms';
               </p>
             }
             <div class="actions top-gap">
-              <button type="button" (click)="saveRooms()" [disabled]="!mapId()">Save rooms</button>
+              <button uiBtn type="button" (click)="saveRooms()" [disabled]="!mapId()">Save rooms</button>
               @if (mapId()) {
-                <a class="button ghost" [routerLink]="['/maps', mapId(), 'edit', 'map']">
-                  Configure map
+                <a uiBtn="secondary" [routerLink]="['/admin/floors', mapId(), 'edit', 'map']">
+                  Floor plan & alignment
                 </a>
-                <a class="button ghost" [routerLink]="['/maps', mapId(), 'book']"
-                  >Open booking view</a
-                >
               }
             </div>
           </article>
-        </section>
-      }
+          </div>
+        }
+      </section>
     </div>
   `,
   styles: `
@@ -277,8 +290,8 @@ export type MapEditorWorkflow = 'map' | 'rooms';
     .embedded-form {
       padding: 1.5rem;
       border: 1px solid var(--line);
-      border-radius: 28px;
-      background: rgba(255, 255, 255, 0.45);
+      border-radius: 12px;
+      background: var(--panel-soft);
     }
 
     .panel {
@@ -287,12 +300,85 @@ export type MapEditorWorkflow = 'map' | 'rooms';
       gap: 1rem;
     }
 
-    .canvas-mode-hint {
+    .canvas-mode-hint,
+    .timezone-note {
       margin: 0;
     }
 
     .editor-layout {
       align-items: start;
+    }
+
+    /* Rooms workflow: natural two-column flow like the "Select space" step —
+       canvas on the left, form + GeoJSON preview stacked on the right. Sizes are
+       natural (the column may exceed the canvas / page height); only the room
+       list scrolls so a long list doesn't push the preview off-screen. */
+    .rooms-side {
+      display: grid;
+      gap: 1.5rem;
+      align-content: start;
+    }
+
+    /* The forms column (room list + GeoJSON preview) fits the screen: it's
+       capped to the viewport and each part scrolls inside its own box. The
+       canvas/container is free to exceed the screen. */
+    .rooms-layout .rooms-side {
+      max-height: calc(100vh - 120px);
+      min-height: 0;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .rooms-layout .rooms-form {
+      min-height: 0;
+    }
+
+    .rooms-layout .rooms-form .room-list {
+      min-height: 160px;
+      max-height: 40vh;
+      overflow: auto;
+    }
+
+    .rooms-layout .rooms-preview {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .rooms-layout .rooms-preview .json-preview {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+      overflow: auto;
+    }
+
+    /* Map workflow ("Upload & align"): the canvas stretches to match the Floor
+       settings form and fills its panel, but never grows past the screen so the
+       whole canvas stays visible. The form renders fully (no inner scroll); if
+       it's taller than the screen the container just stretches and the page
+       scrolls. */
+    .map-editor-layout,
+    .rooms-layout {
+      align-items: stretch;
+    }
+
+    .map-editor-layout .canvas-panel,
+    .rooms-layout .canvas-panel {
+      display: flex;
+      flex-direction: column;
+      /* A real floor so the canvas is always usably tall; the SVG fills this
+         flex space (no hard min-height of its own) and preserveAspectRatio=meet
+         shows the whole footprint, so the panel never clips it. The form column
+         can still make it taller via the stretch alignment. */
+      min-height: 520px;
+    }
+
+    .map-editor-layout .canvas-panel app-map-editor-canvas,
+    .rooms-layout .canvas-panel app-map-editor-canvas {
+      /* basis 0 so the SVG's intrinsic height doesn't inflate the row — the form
+         drives the height and the canvas matches it (rather than the reverse). */
+      flex: 1 1 0;
+      min-height: 0;
+      display: block;
     }
 
     .canvas-panel {
@@ -308,18 +394,6 @@ export type MapEditorWorkflow = 'map' | 'rooms';
       flex-wrap: wrap;
     }
 
-    .segmented {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .segmented .active {
-      background: rgba(14, 116, 144, 0.1);
-      border-color: rgba(14, 116, 144, 0.35);
-      color: var(--ink);
-    }
-
     .room-list {
       display: grid;
       gap: 0.85rem;
@@ -327,15 +401,16 @@ export type MapEditorWorkflow = 'map' | 'rooms';
 
     .room-item {
       border: 1px solid var(--line);
-      border-radius: 20px;
+      border-radius: 10px;
       padding: 1rem;
       display: grid;
       gap: 0.75rem;
+      cursor: pointer;
     }
 
     .room-item.selected {
-      border-color: rgba(14, 116, 144, 0.35);
-      background: rgba(14, 116, 144, 0.05);
+      border-color: var(--green);
+      background: var(--green-soft);
     }
 
     .room-item-header {
@@ -357,8 +432,8 @@ export type MapEditorWorkflow = 'map' | 'rooms';
     .json-preview {
       margin: 0;
       padding: 1rem;
-      border-radius: 18px;
-      background: rgba(15, 23, 42, 0.04);
+      border-radius: 8px;
+      background: var(--panel-inset);
       overflow: auto;
       max-height: 360px;
     }
@@ -371,11 +446,12 @@ export type MapEditorWorkflow = 'map' | 'rooms';
 export class MapEditorFormComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly mapsService = inject(MapsService);
+  private readonly floorsService = inject(FloorsService);
+  private readonly campusesService = inject(CampusesService);
 
   protected readonly mapId = signal<string | null>(null);
   protected readonly rooms = signal<EditorRoomModel[]>([]);
   protected readonly selectedRoomId = signal<string | null>(null);
-  protected readonly parentMapId = signal<string | null>(null);
   protected readonly error = signal('');
   protected readonly message = signal('');
   protected readonly canvasMode = signal<CanvasMode>('rooms');
@@ -392,9 +468,25 @@ export class MapEditorFormComponent implements OnInit {
   @Input() embedded = false;
   @Input() workflow: MapEditorWorkflow = 'map';
 
+  /**
+   * When true the footprint is treated as fixed (the building outline): footprint
+   * text/draw controls are hidden and the step focuses purely on uploading and
+   * aligning the floor-plan image.
+   */
+  @Input() lockFootprint = false;
+
+  /** Building under which a new floor is created (creation flow only). */
+  @Input() buildingId: string | null = null;
+
+  /** Optional campus/place used to seed the initial footprint when creating a floor. */
+  @Input() seedCampusId: string | null = null;
+  @Input() seedPlaceId: string | null = null;
+
+  /** Emitted after a floor is created or updated (lets embedded hosts react inline). */
+  @Output() readonly floorSaved = new EventEmitter<FloorMapDto>();
+
   protected name = 'Main Campus Floor';
   protected floorLabel = 'Ground Floor';
-  protected timezone = 'Europe/Bucharest';
   protected footprintText = JSON.stringify(
     createPolygon([
       [23.8295, 44.298],
@@ -407,58 +499,63 @@ export class MapEditorFormComponent implements OnInit {
   );
   protected readonly backgroundDraft = signal<BackgroundImageEditDraft>({
     scale: 1,
-    rotationQuarterTurns: 0,
+    rotationDegrees: 0,
     offsetX: 0,
     offsetY: 0,
     cropRect: createDefaultCropRect(this.bounds()),
+    opacity: DEFAULT_IMAGE_OPACITY,
+    flipHorizontal: false,
+    flipVertical: false,
   });
 
-  private currentMap: MapDto | null = null;
+  private currentMap: FloorMapDto | null = null;
   private backgroundFile: File | null = null;
   private pendingBackgroundUrl: string | null = null;
-  private readonly parentMapOptions = signal<MapSummaryDto[]>([]);
 
   async ngOnInit(): Promise<void> {
-    await this.loadParentMapOptions();
     this.resetBackgroundEdits();
     if (this.workflow === 'rooms') {
       this.canvasMode.set('rooms');
+    } else if (this.lockFootprint) {
+      // Image-only step: start in image-alignment mode over the fixed footprint.
+      this.canvasMode.set('image');
     }
 
     if (this.mapId()) {
       await this.loadMap(this.mapId()!);
+    } else if (this.seedCampusId && this.seedPlaceId) {
+      await this.seedFootprintFromPlace(this.seedCampusId, this.seedPlaceId);
     }
+  }
+
+  protected timezoneDisplay(): string | null {
+    return this.currentMap?.timezone ?? null;
   }
 
   protected headerTitle(): string {
     if (!this.mapId()) {
-      return 'Configure Map';
+      return 'New Floor';
     }
 
     if (this.embedded) {
       return this.name;
     }
 
-    return this.workflow === 'rooms' ? 'Define Rooms' : 'Configure Map';
+    return this.workflow === 'rooms' ? 'Define Rooms' : 'Floor Plan & Alignment';
   }
 
   protected headerSubtitle(): string {
     if (!this.mapId()) {
-      return 'Create the digital map footprint and align the background image before defining rooms.';
+      return 'Create the floor footprint and align the background image before defining rooms.';
     }
 
     if (this.embedded) {
-      return 'Editing form for a child map of the currently opened map.';
+      return 'Editing form for this floor map.';
     }
 
     return this.workflow === 'rooms'
-      ? 'Draw, drag, resize, and save room boundaries over the saved map footprint.'
-      : 'Set the map metadata, footprint GeoJSON, and background image alignment.';
-  }
-
-  protected availableParentMaps(): MapSummaryDto[] {
-    const currentMapId = this.mapId();
-    return this.parentMapOptions().filter((map) => map.id !== currentMapId);
+      ? 'Draw, drag, resize, and save room boundaries over the saved floor footprint.'
+      : 'Set the floor metadata, footprint GeoJSON, and background image alignment.';
   }
 
   protected loadSampleFootprint(): void {
@@ -475,6 +572,10 @@ export class MapEditorFormComponent implements OnInit {
       2,
     );
     this.resetBackgroundEdits();
+  }
+
+  protected setFootprintFromMapbox(footprint: GeoJsonPolygon): void {
+    this.footprintText = JSON.stringify(footprint, null, 2);
   }
 
   protected onBackgroundSelected(event: Event): void {
@@ -567,7 +668,7 @@ export class MapEditorFormComponent implements OnInit {
 
     switch (this.canvasMode()) {
       case 'image':
-        return 'Drag anywhere on the canvas to move the background image under the footprint.';
+        return 'Drag the image to move it, drag a corner to resize, or use the top handle to rotate it onto the footprint. Adjust opacity to align precisely.';
       case 'crop':
         return 'Move the crop frame or drag its handles. Leaving crop mode shows the final cropped preview.';
       default:
@@ -578,17 +679,20 @@ export class MapEditorFormComponent implements OnInit {
   protected rotateBackground(direction: number): void {
     this.backgroundDraft.update((draft) => ({
       ...draft,
-      rotationQuarterTurns: (((draft.rotationQuarterTurns + direction) % 4) + 4) % 4,
+      rotationDegrees: draft.rotationDegrees + direction * 90,
     }));
   }
 
   protected resetBackgroundEdits(): void {
     this.backgroundDraft.set({
       scale: 1,
-      rotationQuarterTurns: 0,
+      rotationDegrees: 0,
       offsetX: 0,
       offsetY: 0,
       cropRect: createDefaultCropRect(this.bounds()),
+      opacity: DEFAULT_IMAGE_OPACITY,
+      flipHorizontal: false,
+      flipVertical: false,
     });
   }
 
@@ -708,18 +812,21 @@ export class MapEditorFormComponent implements OnInit {
       const payload = {
         name: this.name,
         floorLabel: this.floorLabel,
-        timezone: this.timezone,
-        parentMapId: this.parentMapId(),
         footprintGeoJson: footprint,
       };
 
-      this.currentMap = this.mapId()
-        ? await this.mapsService.update(this.mapId()!, payload)
-        : await this.mapsService.create(payload);
+      if (this.mapId()) {
+        this.currentMap = await this.mapsService.update(this.mapId()!, payload);
+      } else {
+        if (!this.buildingId) {
+          this.error.set('Missing building. Open floor creation from the spaces setup page.');
+          return;
+        }
+
+        this.currentMap = await this.floorsService.createForBuilding(this.buildingId, payload);
+      }
 
       this.mapId.set(this.currentMap.id);
-
-      await this.loadParentMapOptions();
 
       if (this.backgroundFile) {
         this.currentMap = await this.mapsService.uploadBackground(
@@ -731,9 +838,11 @@ export class MapEditorFormComponent implements OnInit {
       }
 
       this.resetBackgroundEdits();
-      this.message.set('Map saved.');
-      if (isNewMap) {
-        await this.router.navigate(['/maps', this.currentMap.id, 'edit', 'map']);
+      this.message.set('Floor saved.');
+      this.floorSaved.emit(this.currentMap);
+      // Embedded hosts handle the new floor inline; only the standalone page navigates.
+      if (isNewMap && !this.embedded) {
+        await this.router.navigate(['/admin/floors', this.currentMap.id, 'edit', 'rooms']);
       }
     } catch (error) {
       this.error.set(this.extractMessage(error));
@@ -761,11 +870,13 @@ export class MapEditorFormComponent implements OnInit {
       this.currentMap = await this.mapsService.processBackground(
         mapId,
         toBackgroundProcessRequest(this.bounds(), {
-          rotationQuarterTurns: draft.rotationQuarterTurns,
+          rotationDegrees: draft.rotationDegrees,
           scale: draft.scale,
           offsetX: draft.offsetX,
           offsetY: draft.offsetY,
           cropRect: draft.cropRect,
+          flipHorizontal: draft.flipHorizontal,
+          flipVertical: draft.flipVertical,
         }),
       );
       this.pendingBackgroundUrl = null;
@@ -845,8 +956,6 @@ export class MapEditorFormComponent implements OnInit {
       this.backgroundFile = null;
       this.name = this.currentMap.name;
       this.floorLabel = this.currentMap.floorLabel;
-      this.timezone = this.currentMap.timezone;
-      this.parentMapId.set(this.currentMap.parentMapId);
       this.footprintText = JSON.stringify(this.currentMap.footprintGeoJson, null, 2);
       this.rooms.set(
         this.currentMap.rooms.map((room) =>
@@ -864,9 +973,17 @@ export class MapEditorFormComponent implements OnInit {
     }
   }
 
-  private async loadParentMapOptions(): Promise<void> {
+  private async seedFootprintFromPlace(campusId: string, placeId: string): Promise<void> {
     try {
-      this.parentMapOptions.set(await this.mapsService.list());
+      const campus = await this.campusesService.get(campusId);
+      const place = campus.places.find((candidate) => candidate.id === placeId);
+      if (!place) {
+        return;
+      }
+
+      this.footprintText = JSON.stringify(place.footprintGeoJson, null, 2);
+      this.name = `${place.name} Floor`;
+      this.resetBackgroundEdits();
     } catch (error) {
       this.error.set(this.extractMessage(error));
     }
@@ -876,7 +993,7 @@ export class MapEditorFormComponent implements OnInit {
     return {
       name: this.name,
       floorLabel: this.floorLabel,
-      timezone: this.timezone,
+      timezone: this.currentMap?.timezone ?? 'UTC',
       backgroundImageUrl: this.currentMap?.backgroundImageUrl ?? null,
       footprintGeoJson: footprint,
       rooms: this.rooms().map((room, index) => ({

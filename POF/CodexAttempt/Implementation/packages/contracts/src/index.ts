@@ -1,5 +1,16 @@
-export type Role = 'admin' | 'user';
+export type OrganizationRole = 'owner' | 'admin' | 'member';
+export type Role = OrganizationRole;
 export type BackgroundFitMode = 'contain';
+
+export type CampusPlaceType =
+  | 'building'
+  | 'sports_field'
+  | 'tennis_court'
+  | 'parking'
+  | 'outdoor_area'
+  | 'other';
+
+export type BookableResourceKind = 'room' | 'campus_place';
 
 export type GeoJsonPosition = [number, number];
 
@@ -15,46 +26,166 @@ export interface UserSummaryDto {
   id: string;
   email: string;
   displayName: string;
-  role: Role;
+  role: OrganizationRole;
+  organizationId: string;
 }
 
 export interface AuthResponseDto {
   token: string;
   expiresInSeconds: number;
   user: UserSummaryDto;
+  organization: OrganizationDto;
+}
+
+export interface OrganizationDto {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface OrganizationInviteDto {
+  id: string;
+  token: string;
+  role: OrganizationRole;
+  email: string | null;
+  expiresAt: string;
+  usedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreateInviteRequest {
+  role: Exclude<OrganizationRole, 'owner'>;
+  email?: string | null;
+  expiresInDays?: number;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  displayName: string;
+  organizationName: string;
+}
+
+export interface RegisterWithInviteRequest {
+  email: string;
+  password: string;
+  displayName: string;
+  inviteToken: string;
+}
+
+export interface CampusSummaryDto {
+  id: string;
+  name: string;
+  timezone: string;
+  boundaryGeoJson: GeoJsonPolygon | null;
+  placeCount: number;
+  buildingCount: number;
+  floorCount: number;
+  roomCount: number;
+}
+
+export interface CampusDto extends CampusSummaryDto {
+  places: CampusPlaceDto[];
+}
+
+export interface CreateCampusRequest {
+  name: string;
+  timezone?: string;
+  boundaryGeoJson?: GeoJsonPolygon | null;
+}
+
+export interface UpdateCampusRequest extends CreateCampusRequest {}
+
+export interface CampusPlaceDto {
+  id: string;
+  campusId: string;
+  name: string;
+  type: CampusPlaceType;
+  bookable: boolean;
+  footprintGeoJson: GeoJsonPolygon;
+  buildingId: string | null;
+  bookableResourceId: string | null;
+  floorCount: number;
+}
+
+export interface CreateCampusPlaceRequest {
+  name: string;
+  type: CampusPlaceType;
+  bookable?: boolean;
+  footprintGeoJson: GeoJsonPolygon;
+}
+
+export interface UpdateCampusPlaceRequest extends CreateCampusPlaceRequest {}
+
+export interface BookableResourceDto {
+  id: string;
+  kind: BookableResourceKind;
+  name: string;
+  campusId: string;
+  campusName: string;
+  timezone: string;
+  campusPlaceId: string | null;
+  campusPlaceName: string | null;
+  roomId: string | null;
+  floorMapId: string | null;
+  floorLabel: string | null;
 }
 
 export interface RoomDto {
   id: string;
-  mapId: string;
+  floorMapId: string;
   name: string;
   color: string;
   sortOrder: number;
   geometryGeoJson: GeoJsonPolygon;
+  bookableResourceId: string | null;
 }
 
-export interface MapSummaryDto {
+export interface FloorMapSummaryDto {
   id: string;
+  buildingId: string;
+  campusPlaceId: string;
+  campusPlaceName: string;
+  campusId: string;
   name: string;
   floorLabel: string;
   timezone: string;
-  parentMapId: string | null;
-  parentMapName: string | null;
   backgroundImageUrl: string | null;
   backgroundFitMode: BackgroundFitMode;
-  childMapCount: number;
   roomCount: number;
 }
 
-export interface MapDto extends MapSummaryDto {
+export interface FloorMapDto extends FloorMapSummaryDto {
   footprintGeoJson: GeoJsonPolygon;
   rooms: RoomDto[];
 }
 
+/** Compatibility aliases: older frontend code refers to floor maps as "maps". */
+export type MapSummaryDto = FloorMapSummaryDto;
+export type MapDto = FloorMapDto;
+
+/**
+ * A room match returned by the org-wide room search, carrying the full
+ * campus → space → floor context needed to drive the map selection chain.
+ */
+export interface RoomSearchResultDto {
+  roomId: string;
+  roomName: string;
+  floorMapId: string;
+  floorLabel: string;
+  buildingId: string;
+  campusPlaceId: string;
+  campusPlaceName: string;
+  campusId: string;
+  campusName: string;
+  bookableResourceId: string | null;
+}
+
 export interface MeetingDto {
   id: string;
-  roomId: string;
-  mapId: string;
+  bookableResourceId: string;
+  roomId: string | null;
+  floorMapId: string | null;
   title: string;
   description: string;
   startsAtUtc: string;
@@ -65,15 +196,17 @@ export interface MeetingDto {
   participants: UserSummaryDto[];
 }
 
-export interface CreateMapRequest {
+export interface CreateFloorMapRequest {
   name: string;
   floorLabel: string;
-  timezone?: string;
-  parentMapId?: string | null;
   footprintGeoJson: GeoJsonPolygon;
 }
 
-export interface UpdateMapRequest extends CreateMapRequest {}
+export interface UpdateFloorMapRequest extends CreateFloorMapRequest {}
+
+/** Compatibility aliases for the floor-map request types. */
+export type CreateMapRequest = CreateFloorMapRequest;
+export type UpdateMapRequest = UpdateFloorMapRequest;
 
 export interface NormalizedRectangle {
   x: number;
@@ -83,11 +216,13 @@ export interface NormalizedRectangle {
 }
 
 export interface ProcessBackgroundImageRequest {
-  rotationQuarterTurns: number;
+  rotationDegrees: number;
   scale: number;
   offsetX: number;
   offsetY: number;
   cropRect: NormalizedRectangle;
+  flipHorizontal?: boolean;
+  flipVertical?: boolean;
 }
 
 export interface EditableRoomInput {
@@ -103,7 +238,7 @@ export interface ReplaceRoomsRequest {
 }
 
 export interface CreateMeetingRequest {
-  roomId: string;
+  bookableResourceId: string;
   title: string;
   description: string;
   localDate: string;

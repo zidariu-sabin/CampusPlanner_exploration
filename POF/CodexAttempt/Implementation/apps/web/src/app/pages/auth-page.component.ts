@@ -1,28 +1,48 @@
-import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { AuthService } from '../core/auth.service';
+import { ButtonDirective } from '../ui';
+
+type AuthMode = 'login' | 'register' | 'invite';
 
 @Component({
   selector: 'app-auth-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [ReactiveFormsModule, ButtonDirective],
   template: `
-    <div class="auth-page">
-      <section class="hero">
-        <p class="eyebrow">Campus Planner</p>
-        <h1>Turn floor outlines into schedulable spaces.</h1>
-        <p class="muted">
-          Upload a cadastral image, trace rooms inside the GeoJSON footprint, and book the result in one-hour slots.
+    <div class="grid min-h-screen items-center gap-8 p-4 sm:p-8 lg:grid-cols-[1.2fr_minmax(320px,440px)]">
+      <section class="grid gap-5 lg:px-10">
+        <div class="flex items-center gap-3">
+          <div class="grid h-12 w-12 place-items-center rounded-lg bg-strong text-lg font-black text-white">
+            CP
+          </div>
+          <p class="text-xs font-bold uppercase tracking-widest text-strong-2">Campus Planner</p>
+        </div>
+        <h1
+          class="max-w-[16ch] text-[clamp(2rem,3.4vw,3.4rem)] font-bold leading-[1.04] tracking-tight text-ink"
+        >
+          Turn floor outlines into schedulable spaces.
+        </h1>
+        <p class="max-w-[46ch] text-[15px] leading-relaxed text-muted">
+          Create an organization, model campuses and configurable spaces, and book rooms or outdoor
+          areas in one-hour slots.
         </p>
       </section>
 
-      <section class="card auth-card">
-        <div class="auth-switch">
-          <button type="button" [class.ghost]="mode() !== 'login'" (click)="mode.set('login')">Login</button>
-          <button type="button" [class.ghost]="mode() !== 'register'" (click)="mode.set('register')">Register</button>
+      <section class="grid gap-4 rounded-lg border border-line bg-panel p-5 shadow-panel">
+        <div class="grid grid-cols-3 gap-1.5 rounded-lg border border-line bg-panel-soft p-1.5">
+          @for (tab of tabs; track tab.mode) {
+            <button
+              type="button"
+              class="rounded-md px-2 py-2 text-xs font-bold transition-colors"
+              [class]="mode() === tab.mode ? 'bg-strong text-white' : 'bg-transparent text-muted hover:text-ink'"
+              (click)="setMode(tab.mode)"
+            >
+              {{ tab.label }}
+            </button>
+          }
         </div>
 
         @if (error()) {
@@ -30,13 +50,13 @@ import { AuthService } from '../core/auth.service';
         }
 
         @if (mode() === 'login') {
-          <form [formGroup]="loginForm" (ngSubmit)="submitLogin()">
+          <form class="grid gap-3.5" [formGroup]="loginForm" (ngSubmit)="submitLogin()">
             <label>
               Email
               <input type="email" formControlName="email" autocomplete="email" />
             </label>
             @if (showLoginError('email')) {
-              <p class="field-error">Enter a valid email address.</p>
+              <p class="text-xs font-semibold text-red">Enter a valid email address.</p>
             }
 
             <label>
@@ -44,19 +64,29 @@ import { AuthService } from '../core/auth.service';
               <input type="password" formControlName="password" autocomplete="current-password" />
             </label>
             @if (showLoginError('password')) {
-              <p class="field-error">Password must contain at least 8 characters.</p>
+              <p class="text-xs font-semibold text-red">Password must contain at least 8 characters.</p>
             }
 
-            <button type="submit" [disabled]="loading() || loginForm.invalid">Enter workspace</button>
+            <button uiBtn class="mt-1 w-full" type="submit" [disabled]="loading() || loginForm.invalid">
+              Enter workspace
+            </button>
           </form>
-        } @else {
-          <form [formGroup]="registerForm" (ngSubmit)="submitRegister()">
+        } @else if (mode() === 'register') {
+          <form class="grid gap-3.5" [formGroup]="registerForm" (ngSubmit)="submitRegister()">
+            <label>
+              Organization name
+              <input type="text" formControlName="organizationName" autocomplete="organization" />
+            </label>
+            @if (showRegisterError('organizationName')) {
+              <p class="text-xs font-semibold text-red">Organization name must contain at least 2 characters.</p>
+            }
+
             <label>
               Display name
               <input type="text" formControlName="displayName" autocomplete="name" />
             </label>
             @if (showRegisterError('displayName')) {
-              <p class="field-error">Display name must contain at least 2 characters.</p>
+              <p class="text-xs font-semibold text-red">Display name must contain at least 2 characters.</p>
             }
 
             <label>
@@ -64,7 +94,7 @@ import { AuthService } from '../core/auth.service';
               <input type="email" formControlName="email" autocomplete="email" />
             </label>
             @if (showRegisterError('email')) {
-              <p class="field-error">Enter a valid email address.</p>
+              <p class="text-xs font-semibold text-red">Enter a valid email address.</p>
             }
 
             <label>
@@ -72,77 +102,58 @@ import { AuthService } from '../core/auth.service';
               <input type="password" formControlName="password" autocomplete="new-password" />
             </label>
             @if (showRegisterError('password')) {
-              <p class="field-error">Password must contain at least 8 characters.</p>
+              <p class="text-xs font-semibold text-red">Password must contain at least 8 characters.</p>
             }
 
-            <button type="submit" [disabled]="loading() || registerForm.invalid">Create account</button>
+            <p class="text-xs text-muted">You become the organization owner and can invite your team.</p>
+
+            <button uiBtn class="mt-1 w-full" type="submit" [disabled]="loading() || registerForm.invalid">
+              Create organization
+            </button>
+          </form>
+        } @else {
+          <form class="grid gap-3.5" [formGroup]="inviteForm" (ngSubmit)="submitInvite()">
+            <label>
+              Invite token
+              <input type="text" formControlName="inviteToken" class="font-mono" />
+            </label>
+            @if (showInviteError('inviteToken')) {
+              <p class="text-xs font-semibold text-red">Paste the invite token you received.</p>
+            }
+
+            <label>
+              Display name
+              <input type="text" formControlName="displayName" autocomplete="name" />
+            </label>
+            @if (showInviteError('displayName')) {
+              <p class="text-xs font-semibold text-red">Display name must contain at least 2 characters.</p>
+            }
+
+            <label>
+              Email
+              <input type="email" formControlName="email" autocomplete="email" />
+            </label>
+            @if (showInviteError('email')) {
+              <p class="text-xs font-semibold text-red">Enter a valid email address.</p>
+            }
+
+            <label>
+              Password
+              <input type="password" formControlName="password" autocomplete="new-password" />
+            </label>
+            @if (showInviteError('password')) {
+              <p class="text-xs font-semibold text-red">Password must contain at least 8 characters.</p>
+            }
+
+            <button uiBtn class="mt-1 w-full" type="submit" [disabled]="loading() || inviteForm.invalid">
+              Join organization
+            </button>
           </form>
         }
       </section>
     </div>
   `,
-  styles: `
-    .auth-page {
-      min-height: 100vh;
-      padding: 2rem;
-      display: grid;
-      grid-template-columns: 1.2fr minmax(320px, 440px);
-      gap: 2rem;
-      align-items: center;
-    }
-
-    .hero {
-      padding: 3rem;
-    }
-
-    .hero h1 {
-      font-size: clamp(2.5rem, 4vw, 4.5rem);
-      line-height: 0.96;
-      margin: 0 0 1rem;
-      max-width: 12ch;
-    }
-
-    .eyebrow {
-      text-transform: uppercase;
-      letter-spacing: 0.18em;
-      font-size: 0.75rem;
-      color: var(--accent);
-      margin: 0 0 1rem;
-    }
-
-    .auth-card {
-      padding: 1.5rem;
-      display: grid;
-      gap: 1rem;
-    }
-
-    .auth-switch {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.75rem;
-    }
-
-    form {
-      display: grid;
-      gap: 0.9rem;
-    }
-
-    .field-error {
-      margin: -0.45rem 0 0;
-      font-size: 0.88rem;
-      color: #7f1d1d;
-    }
-
-    @media (max-width: 900px) {
-      .auth-page {
-        grid-template-columns: 1fr;
-      }
-
-      .hero {
-        padding: 1rem 0;
-      }
-    }
-  `,
+  styles: ``,
 })
 export class AuthPageComponent {
   private readonly fb = inject(FormBuilder);
@@ -150,9 +161,15 @@ export class AuthPageComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
-  protected readonly mode = signal<'login' | 'register'>('login');
+  protected readonly mode = signal<AuthMode>('login');
   protected readonly loading = signal(false);
   protected readonly error = signal('');
+
+  protected readonly tabs: ReadonlyArray<{ mode: AuthMode; label: string }> = [
+    { mode: 'login', label: 'Sign in' },
+    { mode: 'register', label: 'Create org' },
+    { mode: 'invite', label: 'Join invite' },
+  ];
 
   protected readonly loginForm = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
@@ -160,6 +177,14 @@ export class AuthPageComponent {
   });
 
   protected readonly registerForm = this.fb.nonNullable.group({
+    organizationName: ['', [Validators.required, Validators.minLength(2)]],
+    displayName: ['', [Validators.required, Validators.minLength(2)]],
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', [Validators.required, Validators.minLength(8)]],
+  });
+
+  protected readonly inviteForm = this.fb.nonNullable.group({
+    inviteToken: ['', [Validators.required, Validators.minLength(8)]],
     displayName: ['', [Validators.required, Validators.minLength(2)]],
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
@@ -168,7 +193,19 @@ export class AuthPageComponent {
   constructor() {
     if (this.auth.isLoggedIn()) {
       void this.router.navigateByUrl(this.redirectTarget());
+      return;
     }
+
+    const inviteToken = this.route.snapshot.queryParamMap.get('invite');
+    if (inviteToken) {
+      this.mode.set('invite');
+      this.inviteForm.patchValue({ inviteToken });
+    }
+  }
+
+  protected setMode(mode: AuthMode): void {
+    this.mode.set(mode);
+    this.error.set('');
   }
 
   protected async submitLogin(): Promise<void> {
@@ -178,29 +215,34 @@ export class AuthPageComponent {
       return;
     }
 
-    this.loading.set(true);
-    this.error.set('');
-    try {
-      await this.auth.login(this.loginForm.getRawValue());
-      await this.router.navigateByUrl(this.redirectTarget());
-    } catch (error) {
-      this.error.set(this.extractMessage(error));
-    } finally {
-      this.loading.set(false);
-    }
+    await this.run(() => this.auth.login(this.loginForm.getRawValue()));
   }
 
   protected async submitRegister(): Promise<void> {
     if (this.registerForm.invalid) {
       this.registerForm.markAllAsTouched();
-      this.error.set('Complete all fields before creating an account.');
+      this.error.set('Complete all fields before creating an organization.');
       return;
     }
 
+    await this.run(() => this.auth.register(this.registerForm.getRawValue()));
+  }
+
+  protected async submitInvite(): Promise<void> {
+    if (this.inviteForm.invalid) {
+      this.inviteForm.markAllAsTouched();
+      this.error.set('Complete all fields, including the invite token.');
+      return;
+    }
+
+    await this.run(() => this.auth.registerWithInvite(this.inviteForm.getRawValue()));
+  }
+
+  private async run(action: () => Promise<void>): Promise<void> {
     this.loading.set(true);
     this.error.set('');
     try {
-      await this.auth.register(this.registerForm.getRawValue());
+      await action();
       await this.router.navigateByUrl(this.redirectTarget());
     } catch (error) {
       this.error.set(this.extractMessage(error));
@@ -225,9 +267,18 @@ export class AuthPageComponent {
     return control.invalid && (control.touched || control.dirty);
   }
 
-  protected showRegisterError(controlName: 'displayName' | 'email' | 'password'): boolean {
+  protected showRegisterError(
+    controlName: 'organizationName' | 'displayName' | 'email' | 'password',
+  ): boolean {
     const control = this.registerForm.controls[controlName];
-    return !!control && control.invalid && (control.touched || control.dirty);
+    return control.invalid && (control.touched || control.dirty);
+  }
+
+  protected showInviteError(
+    controlName: 'inviteToken' | 'displayName' | 'email' | 'password',
+  ): boolean {
+    const control = this.inviteForm.controls[controlName];
+    return control.invalid && (control.touched || control.dirty);
   }
 
   private redirectTarget(): string {

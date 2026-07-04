@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, ElementRef, HostListener, ViewChild, input, output } from '@angular/core';
+import { Component, ElementRef, HostListener, ViewChild, input, output, signal } from '@angular/core';
 import {
   EditorRoomModel,
   GeoJsonPolygon,
@@ -21,15 +21,17 @@ import {
   type BackgroundImageEditDraft,
   type CanvasMode,
   type EditorRectangle,
+  DEFAULT_IMAGE_OPACITY,
+  clampBackgroundScale,
   clampCropRect,
   createDefaultCropRect,
   createMinimumCropSize,
   getBackgroundImageRect,
-  quarterTurnsToDegrees,
 } from '../core/background-image-editor';
 
 type RoomInteractionMode = 'drag' | 'resize';
 type CropHandle = 'nw' | 'ne' | 'se' | 'sw';
+type Corner = 'nw' | 'ne' | 'se' | 'sw';
 
 interface RoomInteractionState {
   kind: 'room';
@@ -40,12 +42,34 @@ interface RoomInteractionState {
   initial: EditorRoomModel;
 }
 
-interface BackgroundPanInteractionState {
-  kind: 'background-pan';
+interface ImageMoveInteractionState {
+  kind: 'image-move';
   startX: number;
   startY: number;
   initialOffsetX: number;
   initialOffsetY: number;
+}
+
+interface ImageScaleInteractionState {
+  kind: 'image-scale';
+  startX: number;
+  startY: number;
+  cx: number;
+  cy: number;
+  initialScale: number;
+  initialDist: number;
+}
+
+interface ImageRotateInteractionState {
+  kind: 'image-rotate';
+  startX: number;
+  startY: number;
+  cx: number;
+  cy: number;
+  /** Pointer angle (radians) at drag start. */
+  startAngle: number;
+  /** Image rotation (degrees) at drag start. */
+  initialRotation: number;
 }
 
 interface CropMoveInteractionState {
@@ -65,7 +89,9 @@ interface CropResizeInteractionState {
 
 type InteractionState =
   | RoomInteractionState
-  | BackgroundPanInteractionState
+  | ImageMoveInteractionState
+  | ImageScaleInteractionState
+  | ImageRotateInteractionState
   | CropMoveInteractionState
   | CropResizeInteractionState;
 
@@ -75,7 +101,7 @@ type InteractionState =
   imports: [CommonModule],
   template: `
     @if (footprint()) {
-      <svg #svgCanvas class="editor-svg" [attr.viewBox]="viewBox()">
+      <svg #svgCanvas class="editor-svg" [attr.viewBox]="viewBox()" (wheel)="onWheel($event)">
         <defs>
           <clipPath [attr.id]="backgroundClipPathId">
             <polygon [attr.points]="footprintPoints()" />
@@ -83,7 +109,21 @@ type InteractionState =
         </defs>
 
         @if (backgroundUrl()) {
-          @if (canvasMode() === 'crop') {
+          @if (canvasMode() === 'image') {
+            <!-- Free-transform alignment: the whole image is shown semi-transparent
+                 over the footprint so it can be dragged, scaled, and rotated. -->
+            <image
+              class="alignment-image"
+              [attr.href]="backgroundUrl()!"
+              [attr.x]="backgroundImageRect().x"
+              [attr.y]="backgroundImageRect().y"
+              [attr.width]="backgroundImageRect().width"
+              [attr.height]="backgroundImageRect().height"
+              [attr.opacity]="imageOpacity()"
+              preserveAspectRatio="none"
+              [attr.transform]="backgroundRotationTransform()"
+            />
+          } @else if (canvasMode() === 'crop') {
             <g [attr.clip-path]="'url(#' + backgroundClipPathId + ')'">
               <image
                 [attr.href]="backgroundUrl()!"
@@ -119,18 +159,42 @@ type InteractionState =
           }
         }
 
-        @if (backgroundUrl() && canvasMode() === 'image') {
-          <rect
-            class="image-pan-layer"
-            [attr.x]="bounds().minX"
-            [attr.y]="bounds().minY"
-            [attr.width]="bounds().width"
-            [attr.height]="bounds().height"
-            (pointerdown)="startBackgroundPan($event)"
-          />
-        }
-
         <polygon class="footprint" [attr.points]="footprintPoints()" />
+
+        @if (backgroundUrl() && canvasMode() === 'image') {
+          <g class="image-transform">
+            <polygon
+              class="image-box"
+              [attr.points]="imageBoxPoints()"
+              (pointerdown)="startImageMove($event)"
+            />
+            <line
+              class="image-rotate-stem"
+              [attr.x1]="rotateStemStart().x"
+              [attr.y1]="rotateStemStart().y"
+              [attr.x2]="rotateHandle().x"
+              [attr.y2]="rotateHandle().y"
+            />
+            <circle
+              class="image-rotate-handle"
+              [attr.cx]="rotateHandle().x"
+              [attr.cy]="rotateHandle().y"
+              [attr.r]="rotateHandleRadius()"
+              (pointerdown)="startImageRotate($event)"
+            >
+              <title>Drag to rotate</title>
+            </circle>
+            @for (corner of imageCorners(); track corner.key) {
+              <circle
+                class="image-resize-handle"
+                [attr.cx]="corner.x"
+                [attr.cy]="corner.y"
+                [attr.r]="handleRadius()"
+                (pointerdown)="startImageScale($event)"
+              />
+            }
+          </g>
+        }
 
         @for (room of rooms(); track room.id) {
           <g>
@@ -149,9 +213,10 @@ type InteractionState =
             />
             <text
               class="room-label"
-              [attr.x]="roomLabelX(room)"
-              [attr.y]="roomLabelY(room)"
-              [attr.font-size]="labelFontSize()"
+              x="0"
+              y="0"
+              [attr.font-size]="LABEL_BASE_FONT"
+              [attr.transform]="roomLabelTransform(room)"
             >
               {{ room.name }}
             </text>
@@ -242,6 +307,12 @@ type InteractionState =
           </g>
         }
       </svg>
+      <div class="zoom-ctl">
+        <button type="button" (click)="zoomIn()" [disabled]="zoomLevel() >= maxZoom" aria-label="Zoom in" title="Zoom in">+</button>
+        <span class="zoom-pct">{{ zoomPercent() }}%</span>
+        <button type="button" (click)="zoomOut()" [disabled]="zoomLevel() <= minZoom" aria-label="Zoom out" title="Zoom out">&minus;</button>
+        <button type="button" (click)="resetZoom()" [disabled]="zoomLevel() === 1" aria-label="Reset to fit" title="Reset to fit">&#8862;</button>
+      </div>
     } @else {
       <p class="message error">
         The footprint GeoJSON must be a valid Polygon before rooms can be edited.
@@ -251,7 +322,7 @@ type InteractionState =
   styles: `
     .editor-svg {
       width: 100%;
-      min-height: 420px;
+      height: 100%;
       border-radius: 22px;
       background:
         linear-gradient(90deg, rgba(31, 42, 51, 0.04) 1px, transparent 1px),
@@ -261,6 +332,61 @@ type InteractionState =
       touch-action: none;
     }
 
+    /* The SVG renders directly in the host (no wrapper) so it keeps its original
+       content-sizing and the surrounding panel grows to fit it (no clipping).
+       The host just provides the positioning context for the zoom overlay. */
+    :host {
+      position: relative;
+      display: block;
+    }
+
+    .zoom-ctl {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 8px 24px rgba(20, 31, 36, 0.12);
+    }
+
+    .zoom-ctl button {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--strong);
+      font-size: 16px;
+      font-weight: 900;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .zoom-ctl button:hover {
+      background: var(--panel-soft);
+    }
+
+    .zoom-ctl button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .zoom-pct {
+      min-width: 42px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
     .footprint {
       fill: rgba(17, 94, 89, 0.08);
       stroke: var(--brand-strong);
@@ -268,9 +394,40 @@ type InteractionState =
       vector-effect: non-scaling-stroke;
     }
 
-    .image-pan-layer {
+    .alignment-image {
+      pointer-events: none;
+    }
+
+    .image-box {
       fill: transparent;
+      stroke: var(--blue, #2563eb);
+      stroke-width: 2;
+      stroke-dasharray: 6 4;
+      cursor: move;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .image-rotate-stem {
+      stroke: var(--blue, #2563eb);
+      stroke-width: 2;
+      vector-effect: non-scaling-stroke;
+      pointer-events: none;
+    }
+
+    .image-rotate-handle {
+      fill: var(--blue, #2563eb);
+      stroke: white;
+      stroke-width: 2;
       cursor: grab;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .image-resize-handle {
+      fill: white;
+      stroke: var(--blue, #2563eb);
+      stroke-width: 2;
+      cursor: nwse-resize;
+      vector-effect: non-scaling-stroke;
     }
 
     .room-shape {
@@ -386,11 +543,108 @@ export class MapEditorCanvasComponent {
       : { minX: 0, minY: 0, maxX: 100, maxY: 100, width: 100, height: 100 };
   }
 
-  protected viewBox(): string {
+  // ----- Zoom / pan -------------------------------------------------------
+  // Zoom is driven entirely through the SVG viewBox. Because pointer→SVG
+  // conversion (toSvgPoint) goes through getScreenCTM(), every existing
+  // interaction (drag/resize/rotate/crop/draw) keeps working at any zoom with
+  // no extra math. zoomLevel 1 = the padded "fit" view; pan is an SVG-unit
+  // offset of the view centre, clamped to keep the window inside the fit extent.
+  protected readonly maxZoom = 8;
+  protected readonly minZoom = 0.4;
+  protected readonly zoomLevel = signal(1);
+  protected readonly pan = signal<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  /** The padded "fit" view of the footprint, before zoom/pan is applied. */
+  private fullView(): { minX: number; minY: number; width: number; height: number } {
     const box = this.bounds();
     const padX = Math.max(box.width * 0.08, 24);
     const padY = Math.max(box.height * 0.08, 24);
-    return `${box.minX - padX} ${box.minY - padY} ${box.width + padX * 2} ${box.height + padY * 2}`;
+    return {
+      minX: box.minX - padX,
+      minY: box.minY - padY,
+      width: box.width + padX * 2,
+      height: box.height + padY * 2,
+    };
+  }
+
+  protected viewBox(): string {
+    const full = this.fullView();
+    const z = this.zoomLevel();
+    const w = full.width / z;
+    const h = full.height / z;
+    // Clamp pan at render time so the zoomed window never leaves the fit extent,
+    // even after the footprint (and therefore bounds) changes underneath us.
+    const maxPanX = Math.max(0, (full.width - w) / 2);
+    const maxPanY = Math.max(0, (full.height - h) / 2);
+    const px = clampNumber(this.pan().x, -maxPanX, maxPanX);
+    const py = clampNumber(this.pan().y, -maxPanY, maxPanY);
+    const cx = full.minX + full.width / 2 + px;
+    const cy = full.minY + full.height / 2 + py;
+    return `${cx - w / 2} ${cy - h / 2} ${w} ${h}`;
+  }
+
+  protected zoomPercent(): number {
+    return Math.round(this.zoomLevel() * 100);
+  }
+
+  protected zoomIn(): void {
+    this.applyZoom(this.zoomLevel() * 1.3);
+  }
+
+  protected zoomOut(): void {
+    this.applyZoom(this.zoomLevel() / 1.3);
+  }
+
+  protected resetZoom(): void {
+    this.zoomLevel.set(1);
+    this.pan.set({ x: 0, y: 0 });
+  }
+
+  private applyZoom(z: number): void {
+    this.zoomLevel.set(clampNumber(z, this.minZoom, this.maxZoom));
+    this.clampPan();
+  }
+
+  /** Wheel zoom anchored to the cursor, so the point under it stays put. */
+  protected onWheel(event: WheelEvent): void {
+    event.preventDefault();
+    const oldZoom = this.zoomLevel();
+    const newZoom = clampNumber(oldZoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15), this.minZoom, this.maxZoom);
+    if (newZoom === oldZoom) {
+      return;
+    }
+
+    const focus = this.clientToSvg(event.clientX, event.clientY);
+    const full = this.fullView();
+    if (focus) {
+      const oldW = full.width / oldZoom;
+      const oldH = full.height / oldZoom;
+      const oldCx = full.minX + full.width / 2 + this.pan().x;
+      const oldCy = full.minY + full.height / 2 + this.pan().y;
+      const fx = oldW === 0 ? 0.5 : (focus.x - (oldCx - oldW / 2)) / oldW;
+      const fy = oldH === 0 ? 0.5 : (focus.y - (oldCy - oldH / 2)) / oldH;
+      const newW = full.width / newZoom;
+      const newH = full.height / newZoom;
+      const newCx = focus.x + newW * (0.5 - fx);
+      const newCy = focus.y + newH * (0.5 - fy);
+      this.zoomLevel.set(newZoom);
+      this.pan.set({
+        x: newCx - (full.minX + full.width / 2),
+        y: newCy - (full.minY + full.height / 2),
+      });
+    } else {
+      this.zoomLevel.set(newZoom);
+    }
+    this.clampPan();
+  }
+
+  private clampPan(): void {
+    const full = this.fullView();
+    const z = this.zoomLevel();
+    const maxX = Math.max(0, (full.width - full.width / z) / 2);
+    const maxY = Math.max(0, (full.height - full.height / z) / 2);
+    const p = this.pan();
+    this.pan.set({ x: clampNumber(p.x, -maxX, maxX), y: clampNumber(p.y, -maxY, maxY) });
   }
 
   protected footprintPoints(): string {
@@ -408,12 +662,28 @@ export class MapEditorCanvasComponent {
 
   protected roomLabelY(room: EditorRoomModel): number {
     const box = getProjectedBoundingBox(roomModelToPolygon(room));
-    return box.minY + Math.min(Math.max(box.height * 0.3, this.labelFontSize()), box.height * 0.75);
+    return box.minY + Math.min(Math.max(box.height * 0.3, this.labelFontSize(room)), box.height * 0.75);
   }
 
-  protected labelFontSize(): number {
-    const shortSide = Math.min(this.bounds().width, this.bounds().height);
-    return Math.min(Math.max(shortSide * 0.035, 1.8), 6);
+  /**
+   * The text is drawn at a deliberately large `font-size` ({@link LABEL_BASE_FONT})
+   * and visually shrunk via a `scale()` transform. Browsers floor the *computed*
+   * font-size at their minimum-font-size setting, which silently ignores small
+   * user-unit font sizes; scaling sidesteps that clamp so the label actually
+   * tracks the room size.
+   */
+  protected readonly LABEL_BASE_FONT = 12;
+
+  protected roomLabelTransform(room: EditorRoomModel): string {
+    const scale = this.labelFontSize(room) / this.LABEL_BASE_FONT;
+    return `translate(${this.roomLabelX(room)} ${this.roomLabelY(room)}) scale(${scale})`;
+  }
+
+  /** Label size is keyed off each room's own footprint so it stays inside the shape. */
+  protected labelFontSize(room: EditorRoomModel): number {
+    const box = getProjectedBoundingBox(roomModelToPolygon(room));
+    const shortSide = Math.min(box.width, box.height);
+    return Math.min(Math.max(shortSide * 0.16, 0.8), 3);
   }
 
   protected handleRadius(): number {
@@ -444,7 +714,17 @@ export class MapEditorCanvasComponent {
     const rectangle = this.backgroundImageRect();
     const centerX = rectangle.x + rectangle.width / 2;
     const centerY = rectangle.y + rectangle.height / 2;
-    return `rotate(${quarterTurnsToDegrees(draft.rotationQuarterTurns)} ${centerX} ${centerY})`;
+    let transform = `rotate(${draft.rotationDegrees} ${centerX} ${centerY})`;
+
+    // Mirror about the image centre. Applied before the rotation (rightmost in the
+    // SVG transform list) to match the backend pipeline (flip → rotate).
+    if (draft.flipHorizontal || draft.flipVertical) {
+      const scaleX = draft.flipHorizontal ? -1 : 1;
+      const scaleY = draft.flipVertical ? -1 : 1;
+      transform += ` translate(${centerX} ${centerY}) scale(${scaleX} ${scaleY}) translate(${-centerX} ${-centerY})`;
+    }
+
+    return transform;
   }
 
   protected displayedCropRect(): EditorRectangle {
@@ -514,12 +794,85 @@ export class MapEditorCanvasComponent {
     };
   }
 
-  protected startBackgroundPan(event: PointerEvent): void {
+  protected imageOpacity(): number {
+    return this.backgroundDraft().opacity ?? DEFAULT_IMAGE_OPACITY;
+  }
+
+  protected rotateHandleRadius(): number {
+    return this.handleRadius() * 1.25;
+  }
+
+  private imageCenter(): { cx: number; cy: number } {
+    const box = this.bounds();
+    const draft = this.backgroundDraft();
+    return {
+      cx: box.minX + box.width / 2 + draft.offsetX,
+      cy: box.minY + box.height / 2 + draft.offsetY,
+    };
+  }
+
+  private rotateAround(
+    x: number,
+    y: number,
+    cx: number,
+    cy: number,
+    degrees: number,
+  ): { x: number; y: number } {
+    if (degrees === 0) {
+      return { x, y };
+    }
+    const radians = (degrees * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const dx = x - cx;
+    const dy = y - cy;
+    return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+  }
+
+  protected imageCorners(): Array<{ key: Corner; x: number; y: number }> {
+    const rect = this.backgroundImageRect();
+    const { cx, cy } = this.imageCenter();
+    const degrees = this.backgroundDraft().rotationDegrees;
+    const corners: Array<{ key: Corner; x: number; y: number }> = [
+      { key: 'nw', x: rect.x, y: rect.y },
+      { key: 'ne', x: rect.x + rect.width, y: rect.y },
+      { key: 'se', x: rect.x + rect.width, y: rect.y + rect.height },
+      { key: 'sw', x: rect.x, y: rect.y + rect.height },
+    ];
+    return corners.map((corner) => {
+      const rotated = this.rotateAround(corner.x, corner.y, cx, cy, degrees);
+      return { key: corner.key, x: rotated.x, y: rotated.y };
+    });
+  }
+
+  protected imageBoxPoints(): string {
+    return this.imageCorners()
+      .map((corner) => `${corner.x},${corner.y}`)
+      .join(' ');
+  }
+
+  protected rotateStemStart(): { x: number; y: number } {
+    const rect = this.backgroundImageRect();
+    const { cx, cy } = this.imageCenter();
+    const degrees = this.backgroundDraft().rotationDegrees;
+    return this.rotateAround(rect.x + rect.width / 2, rect.y, cx, cy, degrees);
+  }
+
+  protected rotateHandle(): { x: number; y: number } {
+    const rect = this.backgroundImageRect();
+    const { cx, cy } = this.imageCenter();
+    const degrees = this.backgroundDraft().rotationDegrees;
+    const stem = Math.max(this.bounds().height * 0.07, this.handleRadius() * 4);
+    return this.rotateAround(rect.x + rect.width / 2, rect.y - stem, cx, cy, degrees);
+  }
+
+  protected startImageMove(event: PointerEvent): void {
     if (this.canvasMode() !== 'image' || !this.backgroundUrl()) {
       return;
     }
 
     event.preventDefault();
+    event.stopPropagation();
     const point = this.toSvgPoint(event);
     if (!point) {
       return;
@@ -527,11 +880,60 @@ export class MapEditorCanvasComponent {
 
     const draft = this.backgroundDraft();
     this.interaction = {
-      kind: 'background-pan',
+      kind: 'image-move',
       startX: point.x,
       startY: point.y,
       initialOffsetX: draft.offsetX,
       initialOffsetY: draft.offsetY,
+    };
+  }
+
+  protected startImageScale(event: PointerEvent): void {
+    if (this.canvasMode() !== 'image' || !this.backgroundUrl()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const point = this.toSvgPoint(event);
+    if (!point) {
+      return;
+    }
+
+    const { cx, cy } = this.imageCenter();
+    const initialDist = Math.hypot(point.x - cx, point.y - cy) || 1;
+    this.interaction = {
+      kind: 'image-scale',
+      startX: point.x,
+      startY: point.y,
+      cx,
+      cy,
+      initialScale: this.backgroundDraft().scale,
+      initialDist,
+    };
+  }
+
+  protected startImageRotate(event: PointerEvent): void {
+    if (this.canvasMode() !== 'image' || !this.backgroundUrl()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const point = this.toSvgPoint(event);
+    if (!point) {
+      return;
+    }
+
+    const { cx, cy } = this.imageCenter();
+    this.interaction = {
+      kind: 'image-rotate',
+      startX: point.x,
+      startY: point.y,
+      cx,
+      cy,
+      startAngle: Math.atan2(point.y - cy, point.x - cx),
+      initialRotation: this.backgroundDraft().rotationDegrees,
     };
   }
 
@@ -667,10 +1069,28 @@ export class MapEditorCanvasComponent {
       return;
     }
 
-    if (this.interaction.kind === 'background-pan') {
+    if (this.interaction.kind === 'image-move') {
       this.updateBackgroundDraft({
         offsetX: this.interaction.initialOffsetX + deltaX,
         offsetY: this.interaction.initialOffsetY + deltaY,
+      });
+      return;
+    }
+
+    if (this.interaction.kind === 'image-scale') {
+      const dist = Math.hypot(point.x - this.interaction.cx, point.y - this.interaction.cy);
+      const scale = clampBackgroundScale(
+        this.interaction.initialScale * (dist / this.interaction.initialDist),
+      );
+      this.updateBackgroundDraft({ scale });
+      return;
+    }
+
+    if (this.interaction.kind === 'image-rotate') {
+      const angle = Math.atan2(point.y - this.interaction.cy, point.x - this.interaction.cx);
+      const deltaDegrees = ((angle - this.interaction.startAngle) * 180) / Math.PI;
+      this.updateBackgroundDraft({
+        rotationDegrees: this.interaction.initialRotation + deltaDegrees,
       });
       return;
     }
@@ -759,14 +1179,18 @@ export class MapEditorCanvasComponent {
   }
 
   private toSvgPoint(event: PointerEvent): { x: number; y: number } | null {
+    return this.clientToSvg(event.clientX, event.clientY);
+  }
+
+  private clientToSvg(clientX: number, clientY: number): { x: number; y: number } | null {
     const svg = this.svgCanvas?.nativeElement;
     if (!svg) {
       return null;
     }
 
     const point = svg.createSVGPoint();
-    point.x = event.clientX;
-    point.y = event.clientY;
+    point.x = clientX;
+    point.y = clientY;
     const matrix = svg.getScreenCTM();
 
     if (!matrix) {
@@ -776,6 +1200,10 @@ export class MapEditorCanvasComponent {
     const transformed = point.matrixTransform(matrix.inverse());
     return { x: transformed.x, y: transformed.y };
   }
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function translatePolygon(polygon: GeoJsonPolygon, deltaX: number, deltaY: number): GeoJsonPolygon {
