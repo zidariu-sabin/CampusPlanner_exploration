@@ -131,10 +131,6 @@ h1 {
   letter-spacing: -0.03em;
 }
 
-a {
-  color: inherit;
-}
-
 .eyebrow {
   margin: 0 0 4px;
   color: var(--strong-2);

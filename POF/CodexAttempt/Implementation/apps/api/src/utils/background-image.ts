@@ -33,15 +33,31 @@ export async function processMapBackgroundImage(
     .png()
     .toBuffer();
   const transformedMetadata = await sharp(transformedImage).metadata();
+  const transformedWidth = transformedMetadata.width ?? 0;
+  const transformedHeight = transformedMetadata.height ?? 0;
   const offsetX = edits.offsetX * canvasSize.width;
   const offsetY = edits.offsetY * canvasSize.height;
-  const compositeLeft = Math.round((canvasSize.width - (transformedMetadata.width ?? 0)) / 2 + offsetX);
-  const compositeTop = Math.round((canvasSize.height - (transformedMetadata.height ?? 0)) / 2 + offsetY);
+  const compositeLeft = Math.round((canvasSize.width - transformedWidth) / 2 + offsetX);
+  const compositeTop = Math.round((canvasSize.height - transformedHeight) / 2 + offsetY);
+
+  // Sharp's composite requires the overlay to fit fully within the base image at
+  // non-negative coordinates — otherwise it throws "Image to composite must have
+  // same dimensions or smaller". Scaling the image up (or a large offset/rotation)
+  // makes the transformed image larger than canvasSize, so composite onto a base
+  // sized to the union of the canvas and the placed image, then extract the target
+  // canvas region back out. The two steps must be separate sharp invocations:
+  // sharp applies composite last in its pipeline, so an extract chained after it
+  // would shrink the base *before* the overlay lands and re-trigger the error.
+  const regionLeft = Math.min(0, compositeLeft);
+  const regionTop = Math.min(0, compositeTop);
+  const regionRight = Math.max(canvasSize.width, compositeLeft + transformedWidth);
+  const regionBottom = Math.max(canvasSize.height, compositeTop + transformedHeight);
+
   const crop = normalizeCrop(edits.cropRect, canvasSize);
-  const composited = await sharp({
+  const compositedUnion = await sharp({
     create: {
-      width: canvasSize.width,
-      height: canvasSize.height,
+      width: regionRight - regionLeft,
+      height: regionBottom - regionTop,
       channels: 4,
       background: { r: 0, g: 0, b: 0, alpha: 0 },
     },
@@ -49,10 +65,19 @@ export async function processMapBackgroundImage(
     .composite([
       {
         input: transformedImage,
-        left: compositeLeft,
-        top: compositeTop,
+        left: compositeLeft - regionLeft,
+        top: compositeTop - regionTop,
       },
     ])
+    .png()
+    .toBuffer();
+  const composited = await sharp(compositedUnion)
+    .extract({
+      left: -regionLeft,
+      top: -regionTop,
+      width: canvasSize.width,
+      height: canvasSize.height,
+    })
     .png()
     .toBuffer();
 
