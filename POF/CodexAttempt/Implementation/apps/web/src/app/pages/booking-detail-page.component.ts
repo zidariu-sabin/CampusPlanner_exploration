@@ -1,10 +1,17 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { BookableResourceDto, FloorMapDto, MeetingDto } from '@campus/contracts';
+import {
+  BookableResourceDto,
+  CampusDto,
+  CampusSummaryDto,
+  FloorMapDto,
+  MeetingDto,
+} from '@campus/contracts';
 import { DateTime } from 'luxon';
 
-import { MapPreviewComponent } from '../components/map-preview.component';
+import { MemberMapboxViewComponent } from '../components/member-mapbox-view.component';
 import { AuthService } from '../core/auth.service';
+import { CampusesService } from '../core/campuses.service';
 import { MapsService } from '../core/maps.service';
 import { MeetingsService } from '../core/meetings.service';
 import { ResourcesService } from '../core/resources.service';
@@ -15,7 +22,7 @@ import { BadgeComponent, ButtonDirective, PanelComponent, RouteStepsComponent } 
   standalone: true,
   imports: [
     RouterLink,
-    MapPreviewComponent,
+    MemberMapboxViewComponent,
     PanelComponent,
     BadgeComponent,
     RouteStepsComponent,
@@ -31,14 +38,18 @@ import { BadgeComponent, ButtonDirective, PanelComponent, RouteStepsComponent } 
         <p class="text-sm text-muted">Loading booking…</p>
       } @else if (meeting(); as meeting) {
         <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_clamp(320px,34%,400px)] lg:items-start">
-          <app-panel heading="Room location" [sub]="resource()?.campusName || 'Indoor route preview'">
-            @if (floorMap(); as map) {
-              <app-map-preview [map]="map" [compact]="true" [selectedRoomId]="meeting.roomId" />
-            } @else if (loadingMap()) {
-              <p class="text-sm text-muted">Loading floor map…</p>
-            } @else {
-              <p class="text-sm text-muted">No indoor map is available for this booking.</p>
+          <app-panel heading="Room location" [sub]="locationSubtitle()">
+            @if (loadingMap()) {
+              <app-badge panelAction>Loading floor…</app-badge>
             }
+            <app-member-mapbox-view
+              [campuses]="campuses()"
+              [selectedCampus]="mapCampus()"
+              [floorMap]="floorMap()"
+              [selectedCampusId]="mapCampus()?.id ?? null"
+              [selectedPlaceId]="resource()?.campusPlaceId ?? null"
+              [selectedRoomId]="meeting.roomId"
+            />
           </app-panel>
 
           <app-panel [heading]="meeting.title" [sub]="localTimeLabel()">
@@ -103,10 +114,13 @@ export class BookingDetailPageComponent {
   private readonly meetingsService = inject(MeetingsService);
   private readonly resourcesService = inject(ResourcesService);
   private readonly mapsService = inject(MapsService);
+  private readonly campusesService = inject(CampusesService);
   private readonly auth = inject(AuthService);
 
   protected readonly meeting = signal<MeetingDto | null>(null);
   protected readonly resources = signal<BookableResourceDto[]>([]);
+  protected readonly campuses = signal<CampusSummaryDto[]>([]);
+  protected readonly mapCampus = signal<CampusDto | null>(null);
   protected readonly floorMap = signal<FloorMapDto | null>(null);
   protected readonly loading = signal(true);
   protected readonly loadingMap = signal(false);
@@ -204,17 +218,47 @@ export class BookingDetailPageComponent {
     }
 
     try {
-      const [meeting, resources] = await Promise.all([
+      const [meeting, resources, campuses] = await Promise.all([
         this.meetingsService.get(meetingId),
         this.resourcesService.list(),
+        this.campusesService.list(),
       ]);
       this.meeting.set(meeting);
       this.resources.set(resources);
-      await this.loadFloorMap(meeting);
+      this.campuses.set(campuses);
+      await Promise.all([this.loadFloorMap(meeting), this.loadMapCampus()]);
     } catch (error) {
       this.error.set(extractMessage(error));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  protected locationSubtitle(): string {
+    const resource = this.resource();
+    if (!resource) {
+      return 'Where to find this booking';
+    }
+    const parts = [resource.campusName];
+    if (resource.campusPlaceName && resource.campusPlaceName !== resource.name) {
+      parts.push(resource.campusPlaceName);
+    }
+    if (resource.floorLabel) {
+      parts.push(resource.floorLabel);
+    }
+    return `${parts.join(' · ')} — the booked room is highlighted.`;
+  }
+
+  private async loadMapCampus(): Promise<void> {
+    const resource = this.resource();
+    if (!resource) {
+      return;
+    }
+    try {
+      this.mapCampus.set(await this.campusesService.get(resource.campusId));
+    } catch {
+      // The campus overlay is optional context; the map still shows all campuses.
+      this.mapCampus.set(null);
     }
   }
 

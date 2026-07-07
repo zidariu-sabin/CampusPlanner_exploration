@@ -72,10 +72,35 @@ import {
                 </a>
               } @empty {
                 <app-empty-state
-                  title="No planned meetings yet"
-                  message="Book your first room to see it appear here."
+                  [title]="recentMeetings().length > 0 ? 'No upcoming meetings' : 'No planned meetings yet'"
+                  [message]="
+                    recentMeetings().length > 0
+                      ? 'Your recent meetings have ended. Book a room to plan the next one.'
+                      : 'Book your first room to see it appear here.'
+                  "
                 />
-                <a uiBtn routerLink="/book">Book your first room</a>
+                <a uiBtn routerLink="/book">
+                  {{ recentMeetings().length > 0 ? 'Book a room' : 'Book your first room' }}
+                </a>
+              }
+
+              @if (recentMeetings().length > 0) {
+                <p class="mb-0 mt-1.5 text-xs font-black uppercase tracking-wider text-muted">Earlier</p>
+                @for (meeting of recentMeetings(); track meeting.id) {
+                  <a
+                    class="flex items-center gap-3 rounded-lg border border-line bg-panel-soft p-3 text-ink opacity-70 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+                    [routerLink]="['/bookings', meeting.id]"
+                  >
+                    <span class="min-w-16 rounded-lg bg-panel px-3 py-1.5 text-center text-sm font-extrabold text-muted">
+                      {{ hourLabel(meeting) }}
+                    </span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-sm font-bold">{{ meeting.title }}</span>
+                      <span class="block truncate text-xs text-muted">{{ locationLabel(meeting) }}</span>
+                    </span>
+                    <app-badge>Ended · {{ dayLabel(meeting) }}</app-badge>
+                  </a>
+                }
               }
             </div>
           </app-panel>
@@ -117,25 +142,37 @@ export class MemberDashboardPageComponent {
       .sort((a, b) => a.startsAtUtc.localeCompare(b.startsAtUtc));
   });
 
+  /** Meetings that already ended (the API returns the last 24h), newest first. */
+  protected readonly recentMeetings = computed(() => {
+    const now = Date.now();
+    return this.meetings()
+      .filter((meeting) => Date.parse(meeting.endsAtUtc) <= now)
+      .sort((a, b) => b.startsAtUtc.localeCompare(a.startsAtUtc));
+  });
+
   constructor() {
     void this.load();
   }
 
+  // Metrics count upcoming meetings only, so they always agree with the
+  // "My planned meetings" list below them.
   protected todayCount(): number {
     const today = DateTime.now().toISODate();
-    return this.meetings().filter((meeting) => meeting.localDate === today).length;
+    return this.upcomingMeetings().filter((meeting) => meeting.localDate === today).length;
   }
 
   protected weekCount(): number {
     const now = DateTime.now();
-    return this.meetings().filter((meeting) =>
+    return this.upcomingMeetings().filter((meeting) =>
       DateTime.fromISO(meeting.localDate).hasSame(now, 'week'),
     ).length;
   }
 
   protected myBookingsCount(): number {
     const me = this.auth.user();
-    return me ? this.meetings().filter((meeting) => meeting.createdBy.id === me.id).length : 0;
+    return me
+      ? this.upcomingMeetings().filter((meeting) => meeting.createdBy.id === me.id).length
+      : 0;
   }
 
   protected nextStartsIn(): string {

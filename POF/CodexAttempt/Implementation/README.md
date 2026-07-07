@@ -19,3 +19,6 @@ For a fuller description of the application layers, database schema, map/room po
 5. Run `npm run dev`.
 
 The API runs migrations automatically on startup and seeds the initial admin account from the environment.
+
+## Debugging
+ Entering the psql console of the docker container `docker exec -it campus-planner-postgres psql -U postgres -d campus_planner`

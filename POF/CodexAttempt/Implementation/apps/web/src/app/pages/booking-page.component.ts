@@ -1,13 +1,23 @@
+import { CdkVirtualScrollViewport, ScrollingModule } from '@angular/cdk/scrolling';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { BookableResourceDto, FloorMapDto, MeetingDto, UserSummaryDto } from '@campus/contracts';
+import {
+  BookableResourceDto,
+  CampusDto,
+  CampusSummaryDto,
+  FloorMapDto,
+  MeetingDto,
+  UserSummaryDto,
+} from '@campus/contracts';
 import { DateTime } from 'luxon';
 
-import { MapPreviewComponent } from '../components/map-preview.component';
+import { MemberMapboxViewComponent } from '../components/member-mapbox-view.component';
 import { AuthService } from '../core/auth.service';
+import { CampusesService } from '../core/campuses.service';
+import { FloorsService } from '../core/floors.service';
 import { MapsService } from '../core/maps.service';
 import { MeetingsService } from '../core/meetings.service';
 import { ResourcesService } from '../core/resources.service';
@@ -21,7 +31,8 @@ const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00
   standalone: true,
   imports: [
     FormsModule,
-    MapPreviewComponent,
+    ScrollingModule,
+    MemberMapboxViewComponent,
     PanelComponent,
     BadgeComponent,
     EmptyStateComponent,
@@ -37,39 +48,138 @@ const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00
         <p class="text-sm text-muted">Loading available spaces…</p>
       } @else {
         <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_clamp(320px,32%,380px)] lg:items-start">
-          <app-panel
-            heading="Available rooms"
-            [sub]="resources().length + ' bookable resources in your organization'"
-          >
-            <div class="grid gap-2.5">
-              @for (resource of resources(); track resource.id) {
-                <article
-                  class="grid gap-3 rounded-lg border bg-panel p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-                  [class]="resource.id === selectedResource()?.id ? 'border-green bg-green-soft/30' : 'border-line'"
+          <div class="grid gap-4">
+          <app-panel heading="Choose a space" [sub]="spacesSubtitle()" [flush]="true">
+            <div class="border-b border-line p-3">
+              <div class="relative">
+                <svg
+                  class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  aria-hidden="true"
                 >
-                  <div class="min-w-0">
-                    <h3 class="text-base font-bold">{{ resource.name }}</h3>
-                    <p class="my-1 text-sm text-muted">{{ resourceLocation(resource) }}</p>
-                    <div class="flex flex-wrap gap-2">
-                      <app-badge tone="good">{{ resource.kind === 'room' ? 'Room' : 'Outdoor space' }}</app-badge>
-                      @if (resource.floorLabel) {
-                        <app-badge>{{ resource.floorLabel }}</app-badge>
-                      }
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    [uiBtn]="resource.id === selectedResource()?.id ? '' : 'secondary'"
-                    (click)="pickResource(resource)"
-                  >
-                    {{ resource.id === selectedResource()?.id ? 'Selected' : 'Select' }}
-                  </button>
-                </article>
-              } @empty {
-                <p class="text-sm text-muted">No bookable spaces configured yet.</p>
+                  <circle cx="7" cy="7" r="4.5" />
+                  <path d="m10.5 10.5 3.5 3.5" stroke-linecap="round" />
+                </svg>
+                <input
+                  type="search"
+                  class="w-full rounded-lg border border-line bg-panel py-2.5 pl-9 pr-3 text-sm text-ink placeholder:text-muted focus:border-strong focus:outline-none"
+                  placeholder="Search by name, campus, or floor"
+                  aria-label="Search spaces"
+                  [ngModel]="searchQuery()"
+                  (ngModelChange)="onSearchChange($event)"
+                />
+              </div>
+              @if (mapFilter(); as filter) {
+                <div class="mt-2 flex items-center gap-2 text-xs">
+                  <span class="inline-flex items-center gap-1.5 rounded-full bg-green-soft py-1 pl-2.5 pr-1.5 font-bold text-green">
+                    <span class="max-w-52 truncate">{{ filter.label }}</span>
+                    <button
+                      type="button"
+                      class="grid h-4 w-4 place-items-center rounded-full text-sm leading-none hover:bg-green/15"
+                      (click)="clearMapFilter()"
+                      aria-label="Show all spaces"
+                    >
+                      ×
+                    </button>
+                  </span>
+                  <span class="text-muted">picked on the map</span>
+                </div>
               }
             </div>
+
+            @if (filteredResources().length > 0) {
+              <cdk-virtual-scroll-viewport [itemSize]="rowHeight" class="h-64">
+                <div
+                  *cdkVirtualFor="let resource of filteredResources(); trackBy: trackResource"
+                  class="h-[76px] px-3 pt-2.5"
+                >
+                  <button
+                    type="button"
+                    class="flex h-full w-full items-center gap-3 rounded-lg border px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-strong/40"
+                    [class]="
+                      resource.id === selectedResource()?.id
+                        ? 'border-green bg-green-soft/40'
+                        : 'border-line bg-panel hover:border-strong/40 hover:bg-panel-soft'
+                    "
+                    [attr.aria-pressed]="resource.id === selectedResource()?.id"
+                    (click)="pickResource(resource)"
+                  >
+                    <span
+                      class="h-2 w-2 flex-none rounded-full"
+                      [class]="resource.kind === 'room' ? 'bg-green' : 'bg-amber'"
+                    ></span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-sm font-bold text-ink">{{ resource.name }}</span>
+                      <span class="block truncate text-xs text-muted">
+                        {{ resource.kind === 'room' ? 'Room' : 'Outdoor space' }} ·
+                        {{ resourceLocation(resource) }}
+                      </span>
+                    </span>
+                    @if (resource.id === selectedResource()?.id) {
+                      <svg
+                        class="h-4 w-4 flex-none text-green"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.2"
+                        aria-hidden="true"
+                      >
+                        <path d="m3 8.5 3.5 3.5L13 4.5" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    } @else {
+                      <svg
+                        class="h-4 w-4 flex-none text-muted/60"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        aria-hidden="true"
+                      >
+                        <path d="m6 3.5 4.5 4.5L6 12.5" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    }
+                  </button>
+                </div>
+              </cdk-virtual-scroll-viewport>
+            } @else {
+              <div class="grid gap-3 p-4">
+                <app-empty-state
+                  [title]="hasListFilters() ? 'No matching spaces' : 'No bookable spaces yet'"
+                  [message]="
+                    hasListFilters()
+                      ? 'Try a different name, or widen the area picked on the map.'
+                      : 'Rooms and outdoor spaces appear here once an admin configures them.'
+                  "
+                />
+                @if (hasListFilters()) {
+                  <button uiBtn="secondary" class="justify-self-center" type="button" (click)="clearListFilters()">
+                    Show all spaces
+                  </button>
+                }
+              </div>
+            }
           </app-panel>
+
+          <app-panel
+            heading="Find on the map"
+            sub="Click a campus, building, or room — the list narrows to what's inside it."
+          >
+            <app-member-mapbox-view
+              [campuses]="campuses()"
+              [selectedCampus]="mapCampus()"
+              [floorMap]="floorMap()"
+              [selectedCampusId]="mapCampus()?.id ?? null"
+              [selectedPlaceId]="mapPlaceId()"
+              [selectedRoomId]="selectedResource()?.roomId ?? null"
+              (campusSelected)="onMapCampusSelected($event)"
+              (placeSelected)="onMapPlaceSelected($event)"
+              (roomSelected)="onMapRoomSelected($event)"
+            />
+          </app-panel>
+          </div>
 
           @if (selectedResource(); as resource) {
             <app-panel [heading]="'Book ' + resource.name" [sub]="resourceLocation(resource)">
@@ -177,24 +287,6 @@ const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => index + 8); // 08:00
             </app-panel>
           }
         </section>
-
-        @if (selectedResource()?.floorMapId) {
-          <app-panel
-            heading="Floor context"
-            [sub]="
-              selectedResource()!.campusPlaceName +
-              ' · ' +
-              selectedResource()!.floorLabel +
-              ' — the selected room is highlighted.'
-            "
-          >
-            @if (floorMap(); as map) {
-              <app-map-preview [map]="map" [compact]="true" [selectedRoomId]="selectedResource()!.roomId" />
-            } @else {
-              <p class="text-sm text-muted">Loading floor preview…</p>
-            }
-          </app-panel>
-        }
       }
     </div>
   `,
@@ -208,6 +300,8 @@ export class BookingPageComponent {
   private readonly meetingsService = inject(MeetingsService);
   private readonly usersService = inject(UsersService);
   private readonly mapsService = inject(MapsService);
+  private readonly campusesService = inject(CampusesService);
+  private readonly floorsService = inject(FloorsService);
   private readonly auth = inject(AuthService);
 
   protected readonly slotHours = SLOT_HOURS;
@@ -231,10 +325,48 @@ export class BookingPageComponent {
   protected title = '';
   protected description = '';
 
+  /** Fixed row slot height (button + gap) — must match the template's h-[76px]. */
+  protected readonly rowHeight = 76;
+  protected readonly searchQuery = signal('');
+  private readonly listViewport = viewChild(CdkVirtualScrollViewport);
+  private revealedSelection = false;
+
+  // Map state: what the embedded campus map shows, and the area filter it
+  // applies to the list when the user clicks a campus or building on it.
+  protected readonly campuses = signal<CampusSummaryDto[]>([]);
+  protected readonly mapCampus = signal<CampusDto | null>(null);
+  protected readonly mapPlaceId = signal<string | null>(null);
+  protected readonly mapFilter = signal<{
+    campusId: string;
+    placeId: string | null;
+    label: string;
+  } | null>(null);
+
   protected readonly selectedResource = computed(() => {
     const id = this.resourceId();
     return id ? (this.resources().find((resource) => resource.id === id) ?? null) : null;
   });
+
+  protected readonly filteredResources = computed(() => {
+    const query = this.searchQuery().trim().toLowerCase();
+    const area = this.mapFilter();
+    return this.resources().filter((resource) => {
+      if (area && resource.campusId !== area.campusId) {
+        return false;
+      }
+      if (area?.placeId && resource.campusPlaceId !== area.placeId) {
+        return false;
+      }
+      return (
+        !query ||
+        resource.name.toLowerCase().includes(query) ||
+        this.resourceLocation(resource).toLowerCase().includes(query)
+      );
+    });
+  });
+
+  protected readonly trackResource = (_index: number, resource: BookableResourceDto): string =>
+    resource.id;
 
   protected readonly invitableUsers = computed(() => {
     const me = this.auth.user();
@@ -254,6 +386,119 @@ export class BookingPageComponent {
       });
 
     void this.loadInitial();
+
+    // On a deep link (/book/:id) scroll the virtual list so the current
+    // selection is visible instead of leaving it stranded below the fold.
+    effect(() => {
+      const viewport = this.listViewport();
+      const selected = this.selectedResource();
+      if (!viewport || !selected || this.revealedSelection) {
+        return;
+      }
+      this.revealedSelection = true;
+      const index = this.filteredResources().findIndex((resource) => resource.id === selected.id);
+      if (index > 2) {
+        viewport.scrollToIndex(index - 1);
+      }
+    });
+  }
+
+  protected spacesSubtitle(): string {
+    const total = this.resources().length;
+    const shown = this.filteredResources().length;
+    return this.searchQuery().trim()
+      ? `${shown} of ${total} spaces match`
+      : `${total} bookable spaces in your organization`;
+  }
+
+  protected onSearchChange(value: string): void {
+    this.searchQuery.set(value);
+    this.listViewport()?.scrollToIndex(0);
+  }
+
+  protected hasListFilters(): boolean {
+    return !!this.searchQuery().trim() || !!this.mapFilter();
+  }
+
+  protected clearListFilters(): void {
+    this.mapFilter.set(null);
+    this.onSearchChange('');
+  }
+
+  protected clearMapFilter(): void {
+    this.mapFilter.set(null);
+    this.listViewport()?.scrollToIndex(0);
+  }
+
+  // ---- Map → list wiring --------------------------------------------------
+
+  protected async onMapCampusSelected(campusId: string): Promise<void> {
+    const campus = await this.loadMapCampus(campusId);
+    if (!campus) {
+      return;
+    }
+    this.mapPlaceId.set(null);
+    this.floorMap.set(null);
+    this.mapFilter.set({ campusId, placeId: null, label: campus.name });
+    this.listViewport()?.scrollToIndex(0);
+  }
+
+  protected async onMapPlaceSelected(placeId: string): Promise<void> {
+    const campus = this.mapCampus();
+    const place = campus?.places.find((candidate) => candidate.id === placeId);
+    if (!campus || !place) {
+      return;
+    }
+
+    this.mapPlaceId.set(placeId);
+    this.mapFilter.set({ campusId: campus.id, placeId, label: `${campus.name} · ${place.name}` });
+    this.listViewport()?.scrollToIndex(0);
+
+    // A whole-space resource (e.g. outdoor area) is picked directly.
+    if (place.bookableResourceId) {
+      const resource = this.resources().find((item) => item.id === place.bookableResourceId);
+      if (resource) {
+        this.pickResource(resource);
+        return;
+      }
+    }
+
+    // A building: reveal its first mapped floor so rooms become clickable.
+    if (place.buildingId) {
+      try {
+        const floors = await this.floorsService.listForBuilding(place.buildingId);
+        this.floorMap.set(floors.length > 0 ? await this.mapsService.get(floors[0].id) : null);
+      } catch {
+        this.floorMap.set(null);
+      }
+    }
+  }
+
+  protected onMapRoomSelected(roomId: string): void {
+    const resource = this.resources().find((item) => item.roomId === roomId);
+    if (resource) {
+      this.pickResource(resource);
+    }
+  }
+
+  private async loadMapCampus(campusId: string): Promise<CampusDto | null> {
+    const current = this.mapCampus();
+    if (current?.id === campusId) {
+      return current;
+    }
+    try {
+      const campus = await this.campusesService.get(campusId);
+      this.mapCampus.set(campus);
+      return campus;
+    } catch {
+      // The map is companion context; the list keeps working without it.
+      return null;
+    }
+  }
+
+  private async syncMapToResource(resource: BookableResourceDto): Promise<void> {
+    await this.loadMapCampus(resource.campusId);
+    this.mapPlaceId.set(resource.campusPlaceId);
   }
 
   protected pickResource(resource: BookableResourceDto): void {
@@ -355,12 +600,14 @@ export class BookingPageComponent {
 
   private async loadInitial(): Promise<void> {
     try {
-      const [resources, users] = await Promise.all([
+      const [resources, users, campuses] = await Promise.all([
         this.resourcesService.list(),
         this.usersService.list(),
+        this.campusesService.list(),
       ]);
       this.resources.set(resources);
       this.users.set(users);
+      this.campuses.set(campuses);
     } catch (error) {
       this.error.set(extractMessage(error));
     } finally {
@@ -378,7 +625,11 @@ export class BookingPageComponent {
       return;
     }
 
-    await Promise.all([this.loadSlots(), this.loadFloorMap(resource)]);
+    await Promise.all([
+      this.loadSlots(),
+      this.loadFloorMap(resource),
+      this.syncMapToResource(resource),
+    ]);
   }
 
   private async loadSlots(): Promise<void> {

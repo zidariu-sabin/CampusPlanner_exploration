@@ -140,7 +140,9 @@ export async function listMeetingsByResourceAndDate(
 
 /** Upcoming meetings the user created or participates in. */
 export async function listMyMeetings(user: UserEntity): Promise<MeetingEntity[]> {
-  const cutoff = new Date(Date.now() - 60 * 60 * 1000);
+  // Include the last 24h so the dashboard can show recently ended meetings
+  // alongside the upcoming ones (the client splits the two groups).
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const meetingIds = await meetingRepository()
     .createQueryBuilder('meeting')
     .select('meeting.id', 'id')
